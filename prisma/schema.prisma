@@ -1,0 +1,564 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ============================================================================
+// ENUMS
+// ============================================================================
+
+enum HouseholdMode {
+  individual
+  couple
+}
+
+enum HouseholdRole {
+  owner
+  member
+}
+
+enum CategoryType {
+  expense
+  income
+  both
+}
+
+enum BudgetPeriodType {
+  weekly
+  biweekly
+  monthly
+  yearly
+}
+
+enum TransactionType {
+  expense
+  income
+  transfer
+}
+
+enum PaymentMethod {
+  cash
+  debit_card
+  credit_card
+  bank_transfer
+  digital_wallet
+  other
+}
+
+enum TransactionSource {
+  manual
+  voice
+  photo
+  ai_suggestion
+  recurring_auto
+}
+
+enum RecurringFrequency {
+  daily
+  weekly
+  monthly
+  yearly
+}
+
+enum SavingsGoalStatus {
+  active
+  completed
+  paused
+  cancelled
+}
+
+enum AiJobType {
+  voice_transcription
+  photo_parsing
+  expense_analysis
+  weekly_summary
+  categorization
+}
+
+enum AiJobStatus {
+  queued
+  processing
+  completed
+  failed
+}
+
+enum NotificationType {
+  budget_alert
+  goal_milestone
+  goal_completed
+  ai_complete
+  household_invite
+  weekly_summary
+  recurring_created
+  system
+}
+
+enum AuditAction {
+  create
+  update
+  delete
+  restore
+}
+
+// ============================================================================
+// 1. REFERENCE TABLE
+// ============================================================================
+
+/// ISO 4217 currency reference. Each household picks exactly one currency.
+model Currency {
+  id            String   @id @default(uuid()) @db.Uuid
+  code          String   @unique @db.VarChar(3) /// ISO 4217 code (USD, EUR, MXN)
+  name          String   @db.VarChar(100) /// Human-readable name
+  symbol        String   @db.VarChar(10) /// Display symbol ($, €, ¥)
+  decimalPlaces Int      @default(2) @db.SmallInt /// Significant decimal places
+  isActive      Boolean  @default(true) /// Whether available for selection
+  createdAt     DateTime @default(now()) @db.Timestamptz()
+  updatedAt     DateTime @updatedAt @db.Timestamptz()
+  deletedAt     DateTime? @db.Timestamptz()
+
+  // Relations
+  households Household[]
+
+  @@index([isActive], map: "idx_currencies_active")
+  @@map("currencies")
+}
+
+// ============================================================================
+// 2. IDENTITY & MULTI-TENANCY
+// ============================================================================
+
+/// Individual user identity, authentication profile, and preferences.
+model User {
+  id                   String    @id @default(uuid()) @db.Uuid
+  email                String    @db.VarChar(255) /// Login email
+  passwordHash         String    @db.VarChar(255) /// Bcrypt/Argon2 hash
+  displayName          String    @db.VarChar(150) /// Shown in UI and AI summaries
+  avatarUrl            String?   @db.Text /// Profile photo URL (external)
+  locale               String    @default("en-US") @db.VarChar(10) /// Date/number formatting
+  timezone             String    @default("UTC") @db.VarChar(50) /// IANA timezone
+  isEmailVerified      Boolean   @default(false)
+  lastLoginAt          DateTime? @db.Timestamptz()
+  deletionScheduledAt  DateTime? @db.Timestamptz() /// Set when owner requests account deletion
+  createdAt            DateTime  @default(now()) @db.Timestamptz()
+  updatedAt            DateTime  @updatedAt @db.Timestamptz()
+  deletedAt            DateTime? @db.Timestamptz()
+
+  // Relations
+  householdMembers  HouseholdMember[]
+  transactions      Transaction[]
+  transactionSplits TransactionSplit[]
+  recurringConfigs  RecurringConfig[]
+  goalContributions GoalContribution[]
+  aiJobs            AiJob[]
+  notifications     Notification[]
+
+  @@unique([email], map: "uq_users_email")
+  @@index([deletionScheduledAt], map: "idx_users_deletion_scheduled")
+  @@map("users")
+}
+
+/// Multi-tenancy boundary. Groups one or two users into a shared financial context.
+model Household {
+  id              String        @id @default(uuid()) @db.Uuid
+  name            String        @db.VarChar(150) /// e.g. "Daniel's Finances"
+  mode            HouseholdMode /// individual or couple
+  currencyId      String        @db.Uuid /// Single currency for entire household
+  inviteCode      String?       @unique @db.VarChar(64) /// One-time code for partner
+  inviteExpiresAt DateTime?     @db.Timestamptz() /// Expiry for invite code
+  createdAt       DateTime      @default(now()) @db.Timestamptz()
+  updatedAt       DateTime      @updatedAt @db.Timestamptz()
+  deletedAt       DateTime?     @db.Timestamptz()
+
+  // Relations
+  currency           Currency            @relation(fields: [currencyId], references: [id])
+  members            HouseholdMember[]
+  categories         Category[]
+  transactions       Transaction[]
+  recurringConfigs   RecurringConfig[]
+  budgets            Budget[]
+  budgetAlerts       BudgetAlert[]
+  savingsGoals       SavingsGoal[]
+  aiJobs             AiJob[]
+  aiWeeklySummaries  AiWeeklySummary[]
+  notifications      Notification[]
+
+  @@index([mode], map: "idx_households_mode")
+  @@index([currencyId], map: "idx_households_currency")
+  @@map("households")
+}
+
+/// Junction table linking users to households with role metadata.
+model HouseholdMember {
+  id          String        @id @default(uuid()) @db.Uuid
+  householdId String        @db.Uuid
+  userId      String        @db.Uuid
+  role        HouseholdRole /// owner or member
+  joinedAt    DateTime      @default(now()) @db.Timestamptz()
+  createdAt   DateTime      @default(now()) @db.Timestamptz()
+  updatedAt   DateTime      @updatedAt @db.Timestamptz()
+  deletedAt   DateTime?     @db.Timestamptz()
+
+  // Relations
+  household Household @relation(fields: [householdId], references: [id])
+  user      User      @relation(fields: [userId], references: [id])
+
+  @@unique([householdId, userId], map: "uq_household_members_household_user")
+  @@index([userId], map: "idx_hm_user_id")
+  @@map("household_members")
+}
+
+// ============================================================================
+// 3. CATEGORIES & BUDGETING
+// ============================================================================
+
+/// Flat (single-level) classification for transactions. System defaults + user custom.
+model Category {
+  id          String       @id @default(uuid()) @db.Uuid
+  householdId String?      @db.Uuid /// NULL = system-wide default category
+  name        String       @db.VarChar(100) /// Display name
+  icon        String?      @db.VarChar(50) /// Emoji or icon identifier
+  color       String?      @db.VarChar(7) /// Hex color code (#FF5733)
+  type        CategoryType /// expense, income, or both
+  isSystem    Boolean      @default(false) /// TRUE = immutable system default
+  sortOrder   Int          @default(0) @db.SmallInt /// Presentation ordering
+  createdAt   DateTime     @default(now()) @db.Timestamptz()
+  updatedAt   DateTime     @updatedAt @db.Timestamptz()
+  deletedAt   DateTime?    @db.Timestamptz()
+
+  // Relations
+  household        Household?        @relation(fields: [householdId], references: [id])
+  transactions     Transaction[]
+  budgets          Budget[]
+  recurringConfigs RecurringConfig[]
+
+  @@unique([householdId, name], map: "uq_categories_household_name")
+  @@index([householdId], map: "idx_categories_household")
+  @@index([type], map: "idx_categories_type")
+  @@index([isSystem], map: "idx_categories_system")
+  @@map("categories")
+}
+
+/// Periodic spending/income limits per category per household.
+model Budget {
+  id                String           @id @default(uuid()) @db.Uuid
+  householdId       String           @db.Uuid /// Tenant isolation
+  categoryId        String           @db.Uuid /// What is budgeted
+  name              String           @db.VarChar(150) /// e.g. "Monthly Groceries"
+  amountLimit       Decimal          @db.Decimal(19, 4) /// Spending/income cap
+  periodType        BudgetPeriodType /// weekly, biweekly, monthly, yearly
+  startDate         DateTime         @db.Date /// When this budget becomes active
+  endDate           DateTime?        @db.Date /// NULL = indefinite rolling budget
+  alertThresholdPct Int              @default(80) @db.SmallInt /// Alert when X% reached
+  isActive          Boolean          @default(true)
+  createdAt         DateTime         @default(now()) @db.Timestamptz()
+  updatedAt         DateTime         @updatedAt @db.Timestamptz()
+  deletedAt         DateTime?        @db.Timestamptz()
+
+  // Relations
+  household Household     @relation(fields: [householdId], references: [id])
+  category  Category      @relation(fields: [categoryId], references: [id])
+  alerts    BudgetAlert[]
+
+  @@unique([householdId, categoryId, periodType, startDate], map: "uq_budgets_household_category_period")
+  @@index([householdId, isActive], map: "idx_budgets_household_active")
+  @@index([categoryId], map: "idx_budgets_category")
+  @@map("budgets")
+}
+
+/// Records triggered budget alert events. Prevents duplicate notifications.
+model BudgetAlert {
+  id                  String    @id @default(uuid()) @db.Uuid
+  budgetId            String    @db.Uuid
+  householdId         String    @db.Uuid /// Denormalized for fast tenant queries
+  thresholdPctReached Int       @db.SmallInt /// Actual % that triggered the alert
+  currentSpent        Decimal   @db.Decimal(19, 4) /// Snapshot of spend when alert fired
+  periodStart         DateTime  @db.Date /// Which budget period this alert belongs to
+  periodEnd           DateTime  @db.Date
+  triggeredAt         DateTime  @default(now()) @db.Timestamptz()
+  acknowledgedAt      DateTime? @db.Timestamptz() /// User dismissed the alert
+  createdAt           DateTime  @default(now()) @db.Timestamptz()
+  updatedAt           DateTime  @updatedAt @db.Timestamptz()
+  deletedAt           DateTime? @db.Timestamptz()
+
+  // Relations
+  budget    Budget    @relation(fields: [budgetId], references: [id])
+  household Household @relation(fields: [householdId], references: [id])
+
+  @@unique([budgetId, thresholdPctReached, periodStart], map: "uq_budget_alerts_budget_threshold_period")
+  @@index([householdId], map: "idx_ba_household")
+  @@index([triggeredAt], map: "idx_ba_triggered_at")
+  @@map("budget_alerts")
+}
+
+// ============================================================================
+// 4. TRANSACTIONS & RECURRING
+// ============================================================================
+
+/// Core financial event — every income or expense record. Highest-volume table.
+model Transaction {
+  id                String            @id @default(uuid()) @db.Uuid
+  householdId       String            @db.Uuid /// Tenant isolation & partition key
+  categoryId        String            @db.Uuid
+  createdByUserId   String            @db.Uuid /// Who entered the transaction
+  recurringConfigId String?           @db.Uuid /// NULL if manual/AI; set if from recurring
+  aiJobId           String?           @db.Uuid /// The AI job that created this (if applicable)
+  type              TransactionType   /// expense, income, transfer
+  amount            Decimal           @db.Decimal(19, 4) /// Always positive; type determines direction
+  description       String?           @db.VarChar(500) /// User or AI-generated description
+  notes             String?           @db.Text /// Extended notes
+  transactionDate   DateTime          @db.Date /// When the transaction occurred
+  paymentMethod     PaymentMethod?    /// cash, debit_card, etc.
+  source            TransactionSource @default(manual) /// How the transaction was created
+  isVerified        Boolean           @default(true) /// FALSE only if AI-generated and unconfirmed
+  tags              String[]          /// PostgreSQL native array for flexible tagging
+  createdAt         DateTime          @default(now()) @db.Timestamptz()
+  updatedAt         DateTime          @updatedAt @db.Timestamptz()
+  deletedAt         DateTime?         @db.Timestamptz()
+
+  // Relations
+  household       Household         @relation(fields: [householdId], references: [id])
+  category        Category          @relation(fields: [categoryId], references: [id])
+  createdByUser   User              @relation(fields: [createdByUserId], references: [id])
+  recurringConfig RecurringConfig?  @relation(fields: [recurringConfigId], references: [id])
+  aiJob           AiJob?            @relation(fields: [aiJobId], references: [id])
+  splits          TransactionSplit[]
+
+  @@index([householdId, transactionDate(sort: Desc)], map: "idx_txn_household_date")
+  @@index([householdId, categoryId], map: "idx_txn_household_category")
+  @@index([householdId, type, transactionDate], map: "idx_txn_household_type_date")
+  @@index([createdByUserId], map: "idx_txn_created_by")
+  @@index([recurringConfigId], map: "idx_txn_recurring_config")
+  @@index([source], map: "idx_txn_source")
+  @@index([aiJobId], map: "idx_txn_ai_job")
+  @@map("transactions")
+}
+
+/// In couple mode, records how a transaction is split between household members.
+/// Form shown with 50/50 default. Exactly 2 rows per transaction in couple mode.
+/// Not used in individual mode.
+model TransactionSplit {
+  id            String    @id @default(uuid()) @db.Uuid
+  transactionId String    @db.Uuid
+  userId        String    @db.Uuid /// The member responsible for this portion
+  amount        Decimal   @db.Decimal(19, 4) /// This member's share
+  percentage    Decimal   @default(50.00) @db.Decimal(5, 2) /// % of total (must sum to 100)
+  isSettled     Boolean   @default(false) /// Whether settled between partners
+  settledAt     DateTime? @db.Timestamptz()
+  createdAt     DateTime  @default(now()) @db.Timestamptz()
+  updatedAt     DateTime  @updatedAt @db.Timestamptz()
+  deletedAt     DateTime? @db.Timestamptz()
+
+  // Relations
+  transaction Transaction @relation(fields: [transactionId], references: [id])
+  user        User        @relation(fields: [userId], references: [id])
+
+  @@unique([transactionId, userId], map: "uq_transaction_splits_txn_user")
+  @@index([userId], map: "idx_ts_user_id")
+  @@index([transactionId, isSettled], map: "idx_ts_unsettled")
+  @@map("transaction_splits")
+}
+
+/// Defines a recurring transaction template. System generates all transactions
+/// between from_date and to_date at the specified frequency on creation.
+/// Edit/delete cascades to future-dated transactions.
+model RecurringConfig {
+  id               String             @id @default(uuid()) @db.Uuid
+  householdId      String             @db.Uuid /// Tenant isolation
+  createdByUserId  String             @db.Uuid /// Who set up the recurrence
+  categoryId       String             @db.Uuid /// Category for all generated transactions
+  type             TransactionType    /// Transaction type for generated transactions
+  amount           Decimal            @db.Decimal(19, 4) /// Amount for each generated transaction
+  description      String?            @db.VarChar(500) /// Description applied to each transaction
+  paymentMethod    PaymentMethod?     /// Payment method for generated transactions
+  frequency        RecurringFrequency /// daily, weekly, monthly, yearly
+  fromDate         DateTime           @db.Date /// First transaction date (inclusive)
+  toDate           DateTime           @db.Date /// Last possible transaction date (inclusive)
+  totalOccurrences Int                @db.SmallInt /// Pre-calculated count of transactions
+  isActive         Boolean            @default(true) /// FALSE if paused or cancelled
+  createdAt        DateTime           @default(now()) @db.Timestamptz()
+  updatedAt        DateTime           @updatedAt @db.Timestamptz()
+  deletedAt        DateTime?          @db.Timestamptz()
+
+  // Relations
+  household     Household     @relation(fields: [householdId], references: [id])
+  createdByUser User          @relation(fields: [createdByUserId], references: [id])
+  category      Category      @relation(fields: [categoryId], references: [id])
+  transactions  Transaction[]
+
+  @@index([householdId], map: "idx_rc_household")
+  @@index([createdByUserId], map: "idx_rc_created_by")
+  @@index([categoryId], map: "idx_rc_category")
+  @@index([householdId, isActive, toDate], map: "idx_rc_active_dates")
+  @@map("recurring_configs")
+}
+
+// ============================================================================
+// 5. SAVINGS GOALS
+// ============================================================================
+
+/// Shared or individual savings targets with progress tracking.
+model SavingsGoal {
+  id            String            @id @default(uuid()) @db.Uuid
+  householdId   String            @db.Uuid /// Tenant isolation
+  name          String            @db.VarChar(150)
+  description   String?           @db.Text
+  targetAmount  Decimal           @db.Decimal(19, 4) /// Must be > 0
+  currentAmount Decimal           @default(0) @db.Decimal(19, 4) /// Denormalized sum
+  icon          String?           @db.VarChar(50)
+  color         String?           @db.VarChar(7) /// Hex color for UI
+  targetDate    DateTime?         @db.Date /// Optional deadline
+  status        SavingsGoalStatus @default(active)
+  completedAt   DateTime?         @db.Timestamptz()
+  createdAt     DateTime          @default(now()) @db.Timestamptz()
+  updatedAt     DateTime          @updatedAt @db.Timestamptz()
+  deletedAt     DateTime?         @db.Timestamptz()
+
+  // Relations
+  household     Household          @relation(fields: [householdId], references: [id])
+  contributions GoalContribution[]
+
+  @@index([householdId, status], map: "idx_sg_household_status")
+  @@map("savings_goals")
+}
+
+/// Individual deposits or withdrawals toward a savings goal.
+model GoalContribution {
+  id            String   @id @default(uuid()) @db.Uuid
+  goalId        String   @db.Uuid
+  userId        String   @db.Uuid /// Who contributed
+  amount        Decimal  @db.Decimal(19, 4) /// Positive = deposit, negative = withdrawal
+  note          String?  @db.VarChar(255)
+  contributedAt DateTime @default(now()) @db.Timestamptz()
+  createdAt     DateTime @default(now()) @db.Timestamptz()
+  updatedAt     DateTime @updatedAt @db.Timestamptz()
+  deletedAt     DateTime? @db.Timestamptz()
+
+  // Relations
+  goal SavingsGoal @relation(fields: [goalId], references: [id])
+  user User        @relation(fields: [userId], references: [id])
+
+  @@index([goalId, contributedAt(sort: Desc)], map: "idx_gc_goal_id")
+  @@index([userId], map: "idx_gc_user_id")
+  @@map("goal_contributions")
+}
+
+// ============================================================================
+// 6. AI & AUDIT
+// ============================================================================
+
+/// Audit log of all AI-powered operations. Tracks user intent, AI result, and status.
+model AiJob {
+  id                   String      @id @default(uuid()) @db.Uuid
+  householdId          String      @db.Uuid /// Tenant isolation
+  initiatedByUserId    String      @db.Uuid /// Who triggered the AI action
+  jobType              AiJobType   /// voice_transcription, photo_parsing, etc.
+  status               AiJobStatus @default(queued)
+  userIntent           String?     @db.VarChar(255) /// What the user was trying to do
+  resultSummary        String?     @db.VarChar(500) /// What AI extracted/produced
+  errorMessage         String?     @db.Text /// Error details if failed
+  startedAt            DateTime?   @db.Timestamptz()
+  completedAt          DateTime?   @db.Timestamptz()
+  createdAt            DateTime    @default(now()) @db.Timestamptz()
+  updatedAt            DateTime    @updatedAt @db.Timestamptz()
+  deletedAt            DateTime?   @db.Timestamptz()
+
+  // Relations
+  household       Household         @relation(fields: [householdId], references: [id])
+  initiatedByUser User              @relation(fields: [initiatedByUserId], references: [id])
+  transactions    Transaction[] /// Transactions created by this job
+  weeklySummary   AiWeeklySummary?  /// Weekly summary generated by this job
+
+  @@index([householdId, jobType, createdAt(sort: Desc)], map: "idx_ai_household_type")
+  @@index([initiatedByUserId, createdAt(sort: Desc)], map: "idx_ai_user")
+  @@index([status], map: "idx_ai_status")
+  @@map("ai_jobs")
+}
+
+/// Conversational weekly summaries generated by AI.
+model AiWeeklySummary {
+  id            String    @id @default(uuid()) @db.Uuid
+  householdId   String    @db.Uuid /// Tenant isolation
+  aiJobId       String?   @unique @db.Uuid /// The job that generated this (1:1)
+  weekStartDate DateTime  @db.Date /// Monday of the summarized week
+  weekEndDate   DateTime  @db.Date /// Sunday of the summarized week
+  summaryText   String    @db.Text /// Conversational summary
+  keyInsights   Json?     /// Structured insights: top categories, anomalies, trends
+  totalIncome   Decimal   @default(0) @db.Decimal(19, 4)
+  totalExpenses Decimal   @default(0) @db.Decimal(19, 4)
+  isRead        Boolean   @default(false)
+  createdAt     DateTime  @default(now()) @db.Timestamptz()
+  updatedAt     DateTime  @updatedAt @db.Timestamptz()
+  deletedAt     DateTime? @db.Timestamptz()
+
+  // Relations
+  household Household @relation(fields: [householdId], references: [id])
+  aiJob     AiJob?    @relation(fields: [aiJobId], references: [id])
+
+  @@unique([householdId, weekStartDate], map: "uq_aws_household_week")
+  @@index([householdId, weekStartDate(sort: Desc)], map: "idx_aws_household_date")
+  @@index([householdId, isRead], map: "idx_aws_unread")
+  @@map("ai_weekly_summaries")
+}
+
+// ============================================================================
+// 7. NOTIFICATIONS & AUDIT LOG
+// ============================================================================
+
+/// User-facing notifications for alerts, milestones, and system messages.
+model Notification {
+  id                String           @id @default(uuid()) @db.Uuid
+  userId            String           @db.Uuid /// Recipient
+  householdId       String?          @db.Uuid /// Context (NULL for system notifications)
+  type              NotificationType /// budget_alert, goal_milestone, etc.
+  title             String           @db.VarChar(200)
+  body              String           @db.Text
+  actionUrl         String?          @db.Text /// Deep link (e.g. "/budgets/uuid")
+  relatedEntityType String?          @db.VarChar(30) /// 'budget', 'goal', 'transaction', etc.
+  relatedEntityId   String?          @db.Uuid
+  isRead            Boolean          @default(false)
+  readAt            DateTime?        @db.Timestamptz()
+  isPushed          Boolean          @default(false)
+  pushedAt          DateTime?        @db.Timestamptz()
+  createdAt         DateTime         @default(now()) @db.Timestamptz()
+  updatedAt         DateTime         @updatedAt @db.Timestamptz()
+  deletedAt         DateTime?        @db.Timestamptz()
+
+  // Relations
+  user      User       @relation(fields: [userId], references: [id])
+  household Household? @relation(fields: [householdId], references: [id])
+
+  @@index([userId, isRead, createdAt(sort: Desc)], map: "idx_notif_user_unread")
+  @@index([householdId, createdAt(sort: Desc)], map: "idx_notif_household")
+  @@index([type], map: "idx_notif_type")
+  @@map("notifications")
+}
+
+/// Immutable append-only log of all data-modifying operations.
+/// NO updatedAt or deletedAt — this table is never modified.
+model AuditLog {
+  id         String      @id @default(uuid()) @db.Uuid
+  householdId String?    @db.Uuid /// Tenant context (NULL for user-level changes)
+  userId     String      @db.Uuid /// Who performed the action
+  action     AuditAction /// create, update, delete, restore
+  entityType String      @db.VarChar(50) /// Table name: 'transactions', 'budgets', etc.
+  entityId   String      @db.Uuid /// PK of the affected record
+  changes    Json        /// { "field": { "old": X, "new": Y } } diff
+  ipAddress  String?     @db.VarChar(45) /// Client IP (IPv4/IPv6)
+  userAgent  String?     @db.Text
+  createdAt  DateTime    @default(now()) @db.Timestamptz()
+
+  // No updatedAt — append-only
+  // No deletedAt — never soft-deleted
+  // No relations — polymorphic via entityType + entityId
+
+  @@index([entityType, entityId, createdAt(sort: Desc)], map: "idx_audit_entity")
+  @@index([householdId, createdAt(sort: Desc)], map: "idx_audit_household")
+  @@index([userId, createdAt(sort: Desc)], map: "idx_audit_user")
+  @@map("audit_log")
+}
