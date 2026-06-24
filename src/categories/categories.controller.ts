@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Body, Patch, Param, Delete } from '@nestjs/common';
+import { Controller, Get, Post, Body, Patch, Param, Delete, HttpCode } from '@nestjs/common';
 import { CategoriesService } from './categories.service';
 import { CreateCategoryDto } from './dto/create-category.dto';
 import { UpdateCategoryDto } from './dto/update-category.dto';
@@ -11,6 +11,7 @@ export class CategoriesController {
   constructor(private readonly categoriesService: CategoriesService) {}
 
   @Post()
+  @HttpCode(201)
   @ApiOperation({ summary: 'Create a category' })
   create(
     @Param('householdId') householdId: string,
@@ -45,6 +46,7 @@ export class CategoriesController {
   }
 
   @Post(':id/replace-and-remove')
+  @HttpCode(200)
   @ApiOperation({ summary: 'Reassign transactions/budgets to a new category and soft-delete this one' })
   replaceAndRemove(
     @Param('householdId') householdId: string,
