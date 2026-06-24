@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Body, Patch, Param, Delete } from '@nestjs/common';
+import { Controller, Get, Post, Body, Patch, Param, Delete, HttpCode } from '@nestjs/common';
 import { CurrenciesService } from './currencies.service';
 import { CreateCurrencyDto } from './dto/create-currency.dto';
 import { UpdateCurrencyDto } from './dto/update-currency.dto';
@@ -10,6 +10,7 @@ export class CurrenciesController {
   constructor(private readonly currenciesService: CurrenciesService) {}
 
   @Post()
+  @HttpCode(201)
   @ApiOperation({ summary: 'Create a new currency (Admin only typically)' })
   create(@Body() createCurrencyDto: CreateCurrencyDto) {
     return this.currenciesService.create(createCurrencyDto);
