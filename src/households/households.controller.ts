@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Body, Patch, Param, Delete } from '@nestjs/common';
+import { Controller, Get, Post, Body, Patch, Param, Delete, HttpCode } from '@nestjs/common';
 import { HouseholdsService } from './households.service';
 import { CreateHouseholdDto } from './dto/create-household.dto';
 import { UpdateHouseholdDto } from './dto/update-household.dto';
@@ -11,6 +11,7 @@ export class HouseholdsController {
   constructor(private readonly householdsService: HouseholdsService) {}
 
   @Post()
+  @HttpCode(201)
   @ApiOperation({ summary: 'Create a household' })
   create(@Body() createHouseholdDto: CreateHouseholdDto) {
     return this.householdsService.create(createHouseholdDto);
@@ -41,12 +42,14 @@ export class HouseholdsController {
   }
 
   @Post(':id/invite')
+  @HttpCode(200)
   @ApiOperation({ summary: 'Generate invite code for partner (couple mode only)' })
   generateInvite(@Param('id') id: string) {
     return this.householdsService.generateInvite(id);
   }
 
   @Post('join')
+  @HttpCode(200)
   @ApiOperation({ summary: 'Join a household using an invite code' })
   join(@Body() joinHouseholdDto: JoinHouseholdDto) {
     return this.householdsService.join(joinHouseholdDto);

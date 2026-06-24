@@ -1,9 +1,10 @@
-import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException, ConflictException, InternalServerErrorException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateHouseholdDto } from './dto/create-household.dto';
 import { UpdateHouseholdDto } from './dto/update-household.dto';
 import { JoinHouseholdDto } from './dto/join-household.dto';
 import { randomBytes } from 'crypto';
+import { Prisma } from '@prisma/client';
 
 @Injectable()
 export class HouseholdsService {
@@ -12,114 +13,159 @@ export class HouseholdsService {
   async create(createHouseholdDto: CreateHouseholdDto) {
     const { ownerId, ...householdData } = createHouseholdDto;
 
-    // Create household and owner member in a transaction
-    return this.prisma.$transaction(async (tx) => {
-      const household = await tx.household.create({
-        data: householdData,
-      });
+    try {
+      // Create household and owner member in a transaction
+      return await this.prisma.$transaction(async (tx) => {
+        const household = await tx.household.create({
+          data: householdData,
+        });
 
-      await tx.householdMember.create({
-        data: {
-          householdId: household.id,
-          userId: ownerId,
-          role: 'owner',
-        },
-      });
+        await tx.householdMember.create({
+          data: {
+            householdId: household.id,
+            userId: ownerId,
+            role: 'owner',
+          },
+        });
 
-      return household;
-    });
+        return household;
+      });
+    } catch (error) {
+      if (error instanceof Prisma.PrismaClientKnownRequestError) {
+        if (error.code === 'P2002') throw new ConflictException('Duplicate household data');
+      }
+      throw new InternalServerErrorException('Database error');
+    }
   }
 
   async findAll() {
-    return this.prisma.household.findMany({
-      where: { deletedAt: null },
-      include: { members: true },
-    });
+    try {
+      return await this.prisma.household.findMany({
+        where: { deletedAt: null },
+        include: { members: true },
+      });
+    } catch (error) {
+      throw new InternalServerErrorException('Database error');
+    }
   }
 
   async findOne(id: string) {
-    const household = await this.prisma.household.findFirst({
-      where: { id, deletedAt: null },
-      include: { members: true },
-    });
-    if (!household) {
-      throw new NotFoundException(`Household with ID ${id} not found`);
+    try {
+      const household = await this.prisma.household.findFirst({
+        where: { id, deletedAt: null },
+        include: { members: true },
+      });
+      if (!household) {
+        throw new NotFoundException(`Household with ID ${id} not found`);
+      }
+      return household;
+    } catch (error) {
+      if (error instanceof NotFoundException) throw error;
+      throw new InternalServerErrorException('Database error');
     }
-    return household;
   }
 
   async update(id: string, updateHouseholdDto: UpdateHouseholdDto) {
-    await this.findOne(id);
-    return this.prisma.household.update({
-      where: { id },
-      data: updateHouseholdDto,
-    });
+    try {
+      await this.findOne(id);
+      return await this.prisma.household.update({
+        where: { id },
+        data: updateHouseholdDto,
+      });
+    } catch (error) {
+      if (error instanceof NotFoundException) throw error;
+      if (error instanceof Prisma.PrismaClientKnownRequestError) {
+        if (error.code === 'P2025') throw new NotFoundException(`Household with ID ${id} not found`);
+        if (error.code === 'P2002') throw new ConflictException('Duplicate household data');
+      }
+      throw new InternalServerErrorException('Database error');
+    }
   }
 
   async remove(id: string) {
-    await this.findOne(id);
-    return this.prisma.household.update({
-      where: { id },
-      data: { deletedAt: new Date() },
-    });
+    try {
+      await this.findOne(id);
+      return await this.prisma.household.update({
+        where: { id },
+        data: { deletedAt: new Date() },
+      });
+    } catch (error) {
+      if (error instanceof NotFoundException) throw error;
+      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2025') throw new NotFoundException(`Household with ID ${id} not found`);
+      throw new InternalServerErrorException('Database error');
+    }
   }
 
   async generateInvite(id: string) {
-    const household = await this.findOne(id);
-    if (household.mode !== 'couple') {
-      throw new BadRequestException('Invites are only available in couple mode');
+    try {
+      const household = await this.findOne(id);
+      if (household.mode !== 'couple') {
+        throw new BadRequestException('Invites are only available in couple mode');
+      }
+
+      const inviteCode = randomBytes(16).toString('hex');
+      const expiresAt = new Date();
+      expiresAt.setHours(expiresAt.getHours() + 48); // Expires in 48 hours
+
+      return await this.prisma.household.update({
+        where: { id },
+        data: {
+          inviteCode,
+          inviteExpiresAt: expiresAt,
+        },
+      });
+    } catch (error) {
+      if (error instanceof NotFoundException || error instanceof BadRequestException) throw error;
+      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2025') throw new NotFoundException(`Household not found`);
+      throw new InternalServerErrorException('Database error');
     }
-
-    const inviteCode = randomBytes(16).toString('hex');
-    const expiresAt = new Date();
-    expiresAt.setHours(expiresAt.getHours() + 48); // Expires in 48 hours
-
-    return this.prisma.household.update({
-      where: { id },
-      data: {
-        inviteCode,
-        inviteExpiresAt: expiresAt,
-      },
-    });
   }
 
   async join(joinHouseholdDto: JoinHouseholdDto) {
-    const household = await this.prisma.household.findFirst({
-      where: {
-        inviteCode: joinHouseholdDto.inviteCode,
-        inviteExpiresAt: { gt: new Date() },
-        deletedAt: null,
-      },
-      include: { members: true },
-    });
-
-    if (!household) {
-      throw new BadRequestException('Invalid or expired invite code');
-    }
-
-    if (household.members.length >= 2) {
-      throw new BadRequestException('Household is already full (max 2 members in couple mode)');
-    }
-
-    // Add user as member and clear invite code
-    return this.prisma.$transaction(async (tx) => {
-      const member = await tx.householdMember.create({
-        data: {
-          householdId: household.id,
-          userId: joinHouseholdDto.userId,
-          role: 'member',
+    try {
+      const household = await this.prisma.household.findFirst({
+        where: {
+          inviteCode: joinHouseholdDto.inviteCode,
+          inviteExpiresAt: { gt: new Date() },
+          deletedAt: null,
         },
+        include: { members: true },
       });
 
-      await tx.household.update({
-        where: { id: household.id },
-        data: {
-          inviteCode: null,
-          inviteExpiresAt: null,
-        },
-      });
+      if (!household) {
+        throw new BadRequestException('Invalid or expired invite code');
+      }
 
-      return member;
-    });
+      if (household.members.length >= 2) {
+        throw new BadRequestException('Household is already full (max 2 members in couple mode)');
+      }
+
+      // Add user as member and clear invite code
+      return await this.prisma.$transaction(async (tx) => {
+        const member = await tx.householdMember.create({
+          data: {
+            householdId: household.id,
+            userId: joinHouseholdDto.userId,
+            role: 'member',
+          },
+        });
+
+        await tx.household.update({
+          where: { id: household.id },
+          data: {
+            inviteCode: null,
+            inviteExpiresAt: null,
+          },
+        });
+
+        return member;
+      });
+    } catch (error) {
+      if (error instanceof BadRequestException) throw error;
+      if (error instanceof Prisma.PrismaClientKnownRequestError) {
+        if (error.code === 'P2002') throw new ConflictException('User is already a member');
+      }
+      throw new InternalServerErrorException('Database error');
+    }
   }
 }
