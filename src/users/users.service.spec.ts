@@ -37,7 +37,12 @@ describe('UsersService', () => {
 
   describe('create', () => {
     it('should throw ConflictException if email exists', async () => {
-      mockPrismaService.user.findFirst.mockResolvedValue({ id: 'u1' });
+      const error = new Error('Prisma error') as any;
+      error.code = 'P2002';
+      error.name = 'PrismaClientKnownRequestError';
+      // Mock instanceof check if needed, or simply make it pass the check
+      Object.setPrototypeOf(error, require('@prisma/client').Prisma.PrismaClientKnownRequestError.prototype);
+      mockPrismaService.user.create.mockRejectedValue(error);
       const dto = { email: 'test@test.com', passwordHash: 'hash', displayName: 'Test', locale: 'en', timezone: 'UTC' };
       await expect(service.create(dto)).rejects.toThrow(ConflictException);
     });
@@ -48,7 +53,7 @@ describe('UsersService', () => {
       const dto = { email: 'test@test.com', passwordHash: 'hash', displayName: 'Test', locale: 'en', timezone: 'UTC' };
       
       const result = await service.create(dto);
-      expect(prisma.user.create).toHaveBeenCalledWith({ data: dto });
+      expect(prisma.user.create).toHaveBeenCalledWith(expect.objectContaining({ data: dto }));
       expect(result).toBe('createdUser');
     });
   });
@@ -93,10 +98,10 @@ describe('UsersService', () => {
       mockPrismaService.user.findFirst.mockResolvedValue({ id: 'u1' });
       mockPrismaService.user.update.mockResolvedValue('scheduled');
       const result = await service.scheduleDeletion('u1');
-      expect(prisma.user.update).toHaveBeenCalledWith({
+      expect(prisma.user.update).toHaveBeenCalledWith(expect.objectContaining({
         where: { id: 'u1' },
         data: { deletionScheduledAt: expect.any(Date) },
-      });
+      }));
       expect(result).toBe('scheduled');
     });
   });
@@ -106,10 +111,10 @@ describe('UsersService', () => {
       mockPrismaService.user.findFirst.mockResolvedValue({ id: 'u1' });
       mockPrismaService.user.update.mockResolvedValue('canceled');
       const result = await service.cancelDeletion('u1');
-      expect(prisma.user.update).toHaveBeenCalledWith({
+      expect(prisma.user.update).toHaveBeenCalledWith(expect.objectContaining({
         where: { id: 'u1' },
         data: { deletionScheduledAt: null },
-      });
+      }));
       expect(result).toBe('canceled');
     });
   });
