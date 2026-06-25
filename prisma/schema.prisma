@@ -148,6 +148,8 @@ model User {
   createdAt            DateTime  @default(now()) @db.Timestamptz()
   updatedAt            DateTime  @updatedAt @db.Timestamptz()
   deletedAt            DateTime? @db.Timestamptz()
+  failedLoginAttempts  Int       @default(0) @db.Integer
+  lockedUntil          DateTime? @db.Timestamptz()
 
   // Relations
   householdMembers  HouseholdMember[]
@@ -562,3 +564,14 @@ model AuditLog {
   @@index([userId, createdAt(sort: Desc)], map: "idx_audit_user")
   @@map("audit_log")
 }
+
+/// Token reuse detection registry for rotated refresh tokens
+model UsedRefreshToken {
+  id        String   @id @default(uuid()) @db.Uuid
+  jti       String   @unique @db.VarChar(255)
+  expiresAt DateTime @db.Timestamptz()
+  createdAt DateTime @default(now()) @db.Timestamptz()
+
+  @@map("used_refresh_tokens")
+}
+
