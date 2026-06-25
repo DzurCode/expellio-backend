@@ -10,9 +10,12 @@ import { TransactionsModule } from './transactions/transactions.module';
 import { RecurringConfigsModule } from './recurring-configs/recurring-configs.module';
 import { BudgetsModule } from './budgets/budgets.module';
 import { SavingsGoalsModule } from './savings-goals/savings-goals.module';
+import { AiJobsModule } from './ai-jobs/ai-jobs.module';
+import { NotificationsModule } from './notifications/notifications.module';
+import { AuditLogModule } from './audit-log/audit-log.module';
 
 @Module({
-  imports: [PrismaModule, CurrenciesModule, UsersModule, HouseholdsModule, CategoriesModule, TransactionsModule, RecurringConfigsModule, BudgetsModule, SavingsGoalsModule],
+  imports: [PrismaModule, CurrenciesModule, UsersModule, HouseholdsModule, CategoriesModule, TransactionsModule, RecurringConfigsModule, BudgetsModule, SavingsGoalsModule, AiJobsModule, NotificationsModule, AuditLogModule],
   controllers: [AppController],
   providers: [AppService],
 })
