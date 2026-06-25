@@ -19,9 +19,6 @@ export class TransactionSplitDto {
 }
 
 export class CreateTransactionDto {
-  @ApiProperty({ description: 'UUID of the user creating the transaction' })
-  @IsUUID()
-  createdByUserId: string;
   @ApiProperty({ description: 'UUID of the category' })
   @IsUUID()
   categoryId: string;

@@ -32,7 +32,7 @@ describe('NotificationsController', () => {
 
   it('should call findAllByUser on service', async () => {
     mockNotificationsService.findAllByUser.mockResolvedValue([{ id: 'n1' }]);
-    const result = await controller.findAll('u1');
+    const result = await controller.findAll({ id: 'u1' });
     expect(service.findAllByUser).toHaveBeenCalledWith('u1');
     expect(result).toHaveLength(1);
   });

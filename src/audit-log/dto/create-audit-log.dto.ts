@@ -8,10 +8,6 @@ export class CreateAuditLogDto {
   @IsUUID()
   householdId?: string;
 
-  @ApiProperty({ description: 'UUID of the user who performed the action' })
-  @IsUUID()
-  @IsNotEmpty()
-  userId: string;
 
   @ApiProperty({ enum: AuditAction })
   @IsEnum(AuditAction)

@@ -8,10 +8,10 @@ import { Prisma } from '@prisma/client';
 export class NotificationsService {
   constructor(private prisma: PrismaService) {}
 
-  async create(createNotificationDto: CreateNotificationDto) {
+  async create(userId: string, createNotificationDto: CreateNotificationDto) {
     try {
       return await this.prisma.notification.create({
-        data: createNotificationDto,
+        data: { ...createNotificationDto, userId },
       });
     } catch (error) {
       if (error instanceof Prisma.PrismaClientKnownRequestError) {

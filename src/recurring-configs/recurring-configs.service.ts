@@ -8,7 +8,7 @@ import { Prisma } from '@prisma/client';
 export class RecurringConfigsService {
   constructor(private prisma: PrismaService) {}
 
-  async create(householdId: string, createRecurringConfigDto: CreateRecurringConfigDto) {
+  async create(householdId: string, createdByUserId: string, createRecurringConfigDto: CreateRecurringConfigDto) {
     try {
       const { fromDate, toDate, ...data } = createRecurringConfigDto;
 
@@ -18,6 +18,7 @@ export class RecurringConfigsService {
           data: {
             ...data,
             householdId,
+            createdByUserId,
             totalOccurrences: data.totalOccurrences ?? 0,
             fromDate: new Date(fromDate),
             toDate: toDate ? new Date(toDate) : new Date('2099-12-31'),

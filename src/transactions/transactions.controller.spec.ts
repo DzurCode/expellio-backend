@@ -32,11 +32,11 @@ describe('TransactionsController', () => {
   });
 
   it('should call create on service', async () => {
-    const dto = { categoryId: 'cat1', type: TransactionType.expense, amount: 100, transactionDate: '2023-01-01', createdByUserId: 'u1' };
-    mockTransactionsService.create.mockResolvedValue({ id: 't1', ...dto });
-
-    const result = await controller.create('h1', dto);
-    expect(service.create).toHaveBeenCalledWith('h1', dto);
+    const dto = { categoryId: 'cat1', amount: 100, transactionDate: '2023-01-01', type: TransactionType.expense };
+    mockTransactionsService.create.mockResolvedValue({ id: 't1' });
+    
+    const result = await controller.create('h1', { id: 'u1' }, dto as any);
+    expect(service.create).toHaveBeenCalledWith('h1', 'u1', dto);
     expect(result.id).toBe('t1');
   });
 });

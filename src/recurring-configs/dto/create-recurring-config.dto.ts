@@ -7,9 +7,6 @@ export class CreateRecurringConfigDto {
   @IsUUID()
   categoryId: string;
 
-  @ApiProperty({ description: 'UUID of the user (who this belongs to)' })
-  @IsUUID()
-  createdByUserId: string;
 
   @ApiProperty({ enum: TransactionType })
   @IsEnum(TransactionType)

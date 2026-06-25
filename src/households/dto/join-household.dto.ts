@@ -7,7 +7,4 @@ export class JoinHouseholdDto {
   @IsNotEmpty()
   inviteCode: string;
 
-  @ApiProperty({ description: 'UUID of the user joining the household' })
-  @IsUUID()
-  userId: string;
 }

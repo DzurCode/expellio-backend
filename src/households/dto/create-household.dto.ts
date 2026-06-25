@@ -16,7 +16,4 @@ export class CreateHouseholdDto {
   @IsUUID()
   currencyId: string;
 
-  @ApiProperty({ description: 'UUID of the user creating this household' })
-  @IsUUID()
-  ownerId: string;
 }

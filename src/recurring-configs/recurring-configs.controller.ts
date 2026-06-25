@@ -3,6 +3,7 @@ import { RecurringConfigsService } from './recurring-configs.service';
 import { CreateRecurringConfigDto } from './dto/create-recurring-config.dto';
 import { UpdateRecurringConfigDto } from './dto/update-recurring-config.dto';
 import { ApiTags, ApiOperation } from '@nestjs/swagger';
+import { CurrentUser } from '../auth/decorators/current-user.decorator';
 
 @ApiTags('recurring-configs')
 @Controller('households/:householdId/recurring-configs')
@@ -14,9 +15,10 @@ export class RecurringConfigsController {
   @ApiOperation({ summary: 'Create a recurring configuration' })
   create(
     @Param('householdId') householdId: string,
+    @CurrentUser() user: { id: string },
     @Body() createRecurringConfigDto: CreateRecurringConfigDto,
   ) {
-    return this.recurringConfigsService.create(householdId, createRecurringConfigDto);
+    return this.recurringConfigsService.create(householdId, user.id, createRecurringConfigDto);
   }
 
   @Get()

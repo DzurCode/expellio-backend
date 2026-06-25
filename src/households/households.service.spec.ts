@@ -44,15 +44,15 @@ describe('HouseholdsService', () => {
   describe('create', () => {
     it('should create household and owner member in transaction', async () => {
       mockPrismaService.household.create.mockResolvedValue({ id: 'hh1' });
-      const dto = { name: 'My Home', mode: 'couple', ownerId: 'user1', baseCurrencyId: 'usd' };
+      const dto = { name: 'My Home', mode: 'couple', currencyId: 'usd' };
       
-      const result = await service.create(dto as any);
+      const result = await service.create('u1', dto as any);
       expect(prisma.$transaction).toHaveBeenCalled();
       expect(prisma.household.create).toHaveBeenCalledWith({
-        data: { name: 'My Home', mode: 'couple', baseCurrencyId: 'usd' },
+        data: { name: 'My Home', mode: 'couple', currencyId: 'usd' },
       });
       expect(prisma.householdMember.create).toHaveBeenCalledWith({
-        data: { householdId: 'hh1', userId: 'user1', role: 'owner' },
+        data: { householdId: 'hh1', userId: 'u1', role: 'owner' },
       });
       expect(result).toEqual({ id: 'hh1' });
     });
@@ -130,18 +130,19 @@ describe('HouseholdsService', () => {
   describe('join', () => {
     it('should throw BadRequestException if invite is invalid or expired', async () => {
       mockPrismaService.household.findFirst.mockResolvedValue(null);
-      await expect(service.join({ inviteCode: 'code', userId: 'user2' })).rejects.toThrow(BadRequestException);
+      await expect(service.join('user2', { inviteCode: 'code' } as any)).rejects.toThrow(BadRequestException);
     });
 
     it('should throw BadRequestException if household is full', async () => {
       mockPrismaService.household.findFirst.mockResolvedValue({ id: 'hh1', members: [{}, {}] });
-      await expect(service.join({ inviteCode: 'code', userId: 'user2' })).rejects.toThrow(BadRequestException);
+      await expect(service.join('user2', { inviteCode: 'code' } as any)).rejects.toThrow(BadRequestException);
     });
 
     it('should add member and clear invite code in transaction', async () => {
       mockPrismaService.household.findFirst.mockResolvedValue({ id: 'hh1', members: [{}] });
       mockPrismaService.householdMember.create.mockResolvedValue('member');
-      const result = await service.join({ inviteCode: 'code', userId: 'user2' });
+      const dto = { inviteCode: 'code123' };
+      const result = await service.join('user2', dto as any);
       
       expect(prisma.$transaction).toHaveBeenCalled();
       expect(prisma.householdMember.create).toHaveBeenCalledWith({

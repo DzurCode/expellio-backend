@@ -10,8 +10,8 @@ import { Prisma } from '@prisma/client';
 export class HouseholdsService {
   constructor(private prisma: PrismaService) {}
 
-  async create(createHouseholdDto: CreateHouseholdDto) {
-    const { ownerId, ...householdData } = createHouseholdDto;
+  async create(ownerId: string, createHouseholdDto: CreateHouseholdDto) {
+    const householdData = createHouseholdDto;
 
     try {
       // Create household and owner member in a transaction
@@ -121,7 +121,7 @@ export class HouseholdsService {
     }
   }
 
-  async join(joinHouseholdDto: JoinHouseholdDto) {
+  async join(userId: string, joinHouseholdDto: JoinHouseholdDto) {
     try {
       const household = await this.prisma.household.findFirst({
         where: {
@@ -145,7 +145,7 @@ export class HouseholdsService {
         const member = await tx.householdMember.create({
           data: {
             householdId: household.id,
-            userId: joinHouseholdDto.userId,
+            userId: userId,
             role: 'member',
           },
         });

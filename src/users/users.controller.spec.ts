@@ -60,7 +60,7 @@ describe('UsersController', () => {
   describe('findOne', () => {
     it('should call service.findOne', async () => {
       mockUsersService.findOne.mockResolvedValue('u1');
-      const result = await controller.findOne('1');
+      const result = await controller.findOne({ id: '1' });
       expect(service.findOne).toHaveBeenCalledWith('1');
       expect(result).toBe('u1');
     });
@@ -70,7 +70,7 @@ describe('UsersController', () => {
     it('should call service.update', async () => {
       const dto = { displayName: 'Updated' };
       mockUsersService.update.mockResolvedValue('updated');
-      const result = await controller.update('1', dto);
+      const result = await controller.update({ id: '1' }, dto);
       expect(service.update).toHaveBeenCalledWith('1', dto);
       expect(result).toBe('updated');
     });
@@ -79,7 +79,7 @@ describe('UsersController', () => {
   describe('scheduleDeletion', () => {
     it('should call service.scheduleDeletion', async () => {
       mockUsersService.scheduleDeletion.mockResolvedValue('scheduled');
-      const result = await controller.scheduleDeletion('1');
+      const result = await controller.scheduleDeletion({ id: '1' });
       expect(service.scheduleDeletion).toHaveBeenCalledWith('1');
       expect(result).toBe('scheduled');
     });
@@ -88,7 +88,7 @@ describe('UsersController', () => {
   describe('cancelDeletion', () => {
     it('should call service.cancelDeletion', async () => {
       mockUsersService.cancelDeletion.mockResolvedValue('canceled');
-      const result = await controller.cancelDeletion('1');
+      const result = await controller.cancelDeletion({ id: '1' });
       expect(service.cancelDeletion).toHaveBeenCalledWith('1');
       expect(result).toBe('canceled');
     });

@@ -3,10 +3,6 @@ import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { NotificationType } from '@prisma/client';
 
 export class CreateNotificationDto {
-  @ApiProperty({ description: 'UUID of the recipient' })
-  @IsUUID()
-  @IsNotEmpty()
-  userId: string;
 
   @ApiPropertyOptional({ description: 'Context UUID if related to a household' })
   @IsOptional()

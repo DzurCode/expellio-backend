@@ -7,10 +7,10 @@ import { Prisma } from '@prisma/client';
 export class AuditLogService {
   constructor(private prisma: PrismaService) {}
 
-  async create(createAuditLogDto: CreateAuditLogDto) {
+  async create(userId: string, createAuditLogDto: CreateAuditLogDto) {
     try {
       return await this.prisma.auditLog.create({
-        data: createAuditLogDto,
+        data: { ...createAuditLogDto, userId },
       });
     } catch (error) {
       if (error instanceof Prisma.PrismaClientKnownRequestError) {

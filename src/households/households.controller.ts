@@ -4,6 +4,7 @@ import { CreateHouseholdDto } from './dto/create-household.dto';
 import { UpdateHouseholdDto } from './dto/update-household.dto';
 import { JoinHouseholdDto } from './dto/join-household.dto';
 import { ApiTags, ApiOperation } from '@nestjs/swagger';
+import { CurrentUser } from '../auth/decorators/current-user.decorator';
 
 @ApiTags('households')
 @Controller('households')
@@ -13,8 +14,11 @@ export class HouseholdsController {
   @Post()
   @HttpCode(201)
   @ApiOperation({ summary: 'Create a household' })
-  create(@Body() createHouseholdDto: CreateHouseholdDto) {
-    return this.householdsService.create(createHouseholdDto);
+  create(
+    @CurrentUser() user: { id: string },
+    @Body() createHouseholdDto: CreateHouseholdDto
+  ) {
+    return this.householdsService.create(user.id, createHouseholdDto);
   }
 
   @Get()
@@ -51,7 +55,10 @@ export class HouseholdsController {
   @Post('join')
   @HttpCode(200)
   @ApiOperation({ summary: 'Join a household using an invite code' })
-  join(@Body() joinHouseholdDto: JoinHouseholdDto) {
-    return this.householdsService.join(joinHouseholdDto);
+  join(
+    @CurrentUser() user: { id: string },
+    @Body() joinHouseholdDto: JoinHouseholdDto
+  ) {
+    return this.householdsService.join(user.id, joinHouseholdDto);
   }
 }

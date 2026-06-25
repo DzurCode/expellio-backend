@@ -3,6 +3,7 @@ import { TransactionsService } from './transactions.service';
 import { CreateTransactionDto } from './dto/create-transaction.dto';
 import { UpdateTransactionDto } from './dto/update-transaction.dto';
 import { ApiTags, ApiOperation } from '@nestjs/swagger';
+import { CurrentUser } from '../auth/decorators/current-user.decorator';
 
 @ApiTags('transactions')
 @Controller('households/:householdId/transactions')
@@ -14,9 +15,10 @@ export class TransactionsController {
   @ApiOperation({ summary: 'Create a transaction' })
   create(
     @Param('householdId') householdId: string,
+    @CurrentUser() user: { id: string },
     @Body() createTransactionDto: CreateTransactionDto,
   ) {
-    return this.transactionsService.create(householdId, createTransactionDto);
+    return this.transactionsService.create(householdId, user.id, createTransactionDto);
   }
 
   @Get()

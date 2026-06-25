@@ -43,8 +43,8 @@ describe('HouseholdsController', () => {
     it('should call service.create', async () => {
       const dto = { name: 'My Home', mode: 'couple', ownerId: 'user1' };
       mockHouseholdsService.create.mockResolvedValue('created');
-      const result = await controller.create(dto as any);
-      expect(service.create).toHaveBeenCalledWith(dto);
+      const result = await controller.create({ id: 'u1' }, dto as any);
+      expect(service.create).toHaveBeenCalledWith('u1', dto);
       expect(result).toBe('created');
     });
   });
@@ -99,8 +99,8 @@ describe('HouseholdsController', () => {
     it('should call service.join', async () => {
       const dto = { inviteCode: 'code123', userId: 'user2' };
       mockHouseholdsService.join.mockResolvedValue('joined');
-      const result = await controller.join(dto as any);
-      expect(service.join).toHaveBeenCalledWith(dto);
+      const result = await controller.join({ id: 'user2' }, dto as any);
+      expect(service.join).toHaveBeenCalledWith('user2', dto);
       expect(result).toBe('joined');
     });
   });

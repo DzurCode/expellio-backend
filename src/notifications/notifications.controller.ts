@@ -3,9 +3,10 @@ import { NotificationsService } from './notifications.service';
 import { CreateNotificationDto } from './dto/create-notification.dto';
 import { UpdateNotificationDto } from './dto/update-notification.dto';
 import { ApiTags, ApiOperation } from '@nestjs/swagger';
+import { CurrentUser } from '../auth/decorators/current-user.decorator';
 
 @ApiTags('notifications')
-@Controller('users/:userId/notifications')
+@Controller('users/me/notifications')
 export class NotificationsController {
   constructor(private readonly notificationsService: NotificationsService) {}
 
@@ -13,33 +14,27 @@ export class NotificationsController {
   @HttpCode(201)
   @ApiOperation({ summary: 'Create a notification' })
   create(
-    @Param('userId') userId: string,
+    @CurrentUser() user: { id: string },
     @Body() createNotificationDto: CreateNotificationDto,
   ) {
-    // Ensures userId from path is set
-    createNotificationDto.userId = userId;
-    return this.notificationsService.create(createNotificationDto);
+    return this.notificationsService.create(user.id, createNotificationDto);
   }
 
   @Get()
   @ApiOperation({ summary: 'List notifications for user' })
-  findAll(@Param('userId') userId: string) {
-    return this.notificationsService.findAllByUser(userId);
+  findAll(@CurrentUser() user: { id: string }) {
+    return this.notificationsService.findAllByUser(user.id);
   }
 
   @Get(':id')
   @ApiOperation({ summary: 'Get notification details' })
-  findOne(
-    @Param('userId') userId: string,
-    @Param('id') id: string,
-  ) {
+  findOne(@Param('id') id: string) {
     return this.notificationsService.findOne(id);
   }
 
   @Patch(':id')
   @ApiOperation({ summary: 'Update notification (e.g. mark as read)' })
   update(
-    @Param('userId') userId: string,
     @Param('id') id: string,
     @Body() updateNotificationDto: UpdateNotificationDto,
   ) {
@@ -48,10 +43,7 @@ export class NotificationsController {
 
   @Delete(':id')
   @ApiOperation({ summary: 'Soft delete a notification' })
-  remove(
-    @Param('userId') userId: string,
-    @Param('id') id: string,
-  ) {
+  remove(@Param('id') id: string) {
     return this.notificationsService.remove(id);
   }
 }

@@ -44,10 +44,10 @@ describe('TransactionsService', () => {
 
   describe('create', () => {
     it('should create a transaction without splits', async () => {
-      const dto = { categoryId: 'cat1', type: TransactionType.expense, amount: 100, transactionDate: '2023-01-01', createdByUserId: 'u1' };
+      const dto = { categoryId: 'cat1', amount: 100, transactionDate: '2023-01-01', type: TransactionType.expense };
       mockPrismaService.transaction.create.mockResolvedValue({ id: 't1', ...dto });
 
-      const result = await service.create('h1', dto);
+      const result = await service.create('h1', 'u1', dto as any);
 
       expect(mockPrismaService.transaction.create).toHaveBeenCalled();
       expect(result.id).toBe('t1');

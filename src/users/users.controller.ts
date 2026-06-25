@@ -3,12 +3,15 @@ import { UsersService } from './users.service';
 import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
 import { ApiTags, ApiOperation } from '@nestjs/swagger';
+import { Public } from '../auth/decorators/public.decorator';
+import { CurrentUser } from '../auth/decorators/current-user.decorator';
 
 @ApiTags('users')
 @Controller('users')
 export class UsersController {
   constructor(private readonly usersService: UsersService) {}
 
+  @Public()
   @Post()
   @HttpCode(201)
   @ApiOperation({ summary: 'Register a new user' })
@@ -22,27 +25,30 @@ export class UsersController {
     return this.usersService.findAll();
   }
 
-  @Get(':id')
+  @Get('me')
   @ApiOperation({ summary: 'Get user profile' })
-  findOne(@Param('id') id: string) {
-    return this.usersService.findOne(id);
+  findOne(@CurrentUser() user: { id: string }) {
+    return this.usersService.findOne(user.id);
   }
 
-  @Patch(':id')
+  @Patch('me')
   @ApiOperation({ summary: 'Update user profile' })
-  update(@Param('id') id: string, @Body() updateUserDto: UpdateUserDto) {
-    return this.usersService.update(id, updateUserDto);
+  update(
+    @CurrentUser() user: { id: string },
+    @Body() updateUserDto: UpdateUserDto
+  ) {
+    return this.usersService.update(user.id, updateUserDto);
   }
 
-  @Delete(':id/schedule-deletion')
+  @Delete('me/schedule-deletion')
   @ApiOperation({ summary: 'Schedule account deletion (30 days)' })
-  scheduleDeletion(@Param('id') id: string) {
-    return this.usersService.scheduleDeletion(id);
+  scheduleDeletion(@CurrentUser() user: { id: string }) {
+    return this.usersService.scheduleDeletion(user.id);
   }
 
-  @Patch(':id/cancel-deletion')
+  @Patch('me/cancel-deletion')
   @ApiOperation({ summary: 'Cancel scheduled account deletion' })
-  cancelDeletion(@Param('id') id: string) {
-    return this.usersService.cancelDeletion(id);
+  cancelDeletion(@CurrentUser() user: { id: string }) {
+    return this.usersService.cancelDeletion(user.id);
   }
 }

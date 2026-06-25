@@ -8,12 +8,13 @@ import { Prisma } from '@prisma/client';
 export class AiJobsService {
   constructor(private prisma: PrismaService) {}
 
-  async create(householdId: string, createAiJobDto: CreateAiJobDto) {
+  async create(householdId: string, initiatedByUserId: string, createAiJobDto: CreateAiJobDto) {
     try {
       return await this.prisma.aiJob.create({
         data: {
           ...createAiJobDto,
           householdId,
+          initiatedByUserId,
         },
       });
     } catch (error) {

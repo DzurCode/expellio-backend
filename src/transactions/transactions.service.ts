@@ -8,7 +8,7 @@ import { Prisma } from '@prisma/client';
 export class TransactionsService {
   constructor(private prisma: PrismaService) {}
 
-  async create(householdId: string, createTransactionDto: CreateTransactionDto) {
+  async create(householdId: string, createdByUserId: string, createTransactionDto: CreateTransactionDto) {
     try {
       const { splits, ...data } = createTransactionDto;
 
@@ -17,6 +17,7 @@ export class TransactionsService {
           data: {
             ...data,
             householdId,
+            createdByUserId,
             transactionDate: new Date(data.transactionDate),
           },
         });

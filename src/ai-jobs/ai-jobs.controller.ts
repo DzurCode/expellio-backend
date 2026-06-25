@@ -3,6 +3,7 @@ import { AiJobsService } from './ai-jobs.service';
 import { CreateAiJobDto } from './dto/create-ai-job.dto';
 import { UpdateAiJobDto } from './dto/update-ai-job.dto';
 import { ApiTags, ApiOperation } from '@nestjs/swagger';
+import { CurrentUser } from '../auth/decorators/current-user.decorator';
 
 @ApiTags('ai-jobs')
 @Controller('households/:householdId/ai-jobs')
@@ -14,9 +15,10 @@ export class AiJobsController {
   @ApiOperation({ summary: 'Create an AI job' })
   create(
     @Param('householdId') householdId: string,
+    @CurrentUser() user: { id: string },
     @Body() createAiJobDto: CreateAiJobDto,
   ) {
-    return this.aiJobsService.create(householdId, createAiJobDto);
+    return this.aiJobsService.create(householdId, user.id, createAiJobDto);
   }
 
   @Get()
