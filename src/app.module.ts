@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+import { ConfigModule } from '@nestjs/config';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { PrismaModule } from './prisma/prisma.module';
@@ -13,9 +14,29 @@ import { SavingsGoalsModule } from './savings-goals/savings-goals.module';
 import { AiJobsModule } from './ai-jobs/ai-jobs.module';
 import { NotificationsModule } from './notifications/notifications.module';
 import { AuditLogModule } from './audit-log/audit-log.module';
+import authConfig from './config/auth.config';
+import { AuthModule } from './auth/auth.module';
 
 @Module({
-  imports: [PrismaModule, CurrenciesModule, UsersModule, HouseholdsModule, CategoriesModule, TransactionsModule, RecurringConfigsModule, BudgetsModule, SavingsGoalsModule, AiJobsModule, NotificationsModule, AuditLogModule],
+  imports: [
+    ConfigModule.forRoot({
+      isGlobal: true,
+      load: [authConfig],
+    }),
+    PrismaModule,
+    CurrenciesModule,
+    UsersModule,
+    HouseholdsModule,
+    CategoriesModule,
+    TransactionsModule,
+    RecurringConfigsModule,
+    BudgetsModule,
+    SavingsGoalsModule,
+    AiJobsModule,
+    NotificationsModule,
+    AuditLogModule,
+    AuthModule,
+  ],
   controllers: [AppController],
   providers: [AppService],
 })
