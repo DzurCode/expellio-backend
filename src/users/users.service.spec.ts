@@ -53,7 +53,13 @@ describe('UsersService', () => {
       const dto = { email: 'test@test.com', passwordHash: 'hash', displayName: 'Test', locale: 'en', timezone: 'UTC' };
       
       const result = await service.create(dto);
-      expect(prisma.user.create).toHaveBeenCalledWith(expect.objectContaining({ data: dto }));
+      expect(prisma.user.create).toHaveBeenCalledWith(expect.objectContaining({
+        data: expect.objectContaining({
+          email: 'test@test.com',
+          displayName: 'Test',
+          passwordHash: expect.any(String),
+        }),
+      }));
       expect(result).toBe('createdUser');
     });
   });
@@ -116,6 +122,48 @@ describe('UsersService', () => {
         data: { deletionScheduledAt: null },
       }));
       expect(result).toBe('canceled');
+    });
+  });
+
+  describe('findByEmailForAuth', () => {
+    it('should find user by email', async () => {
+      mockPrismaService.user.findFirst.mockResolvedValue({ id: 'u1', email: 'test@test.com' });
+      const result = await service.findByEmailForAuth('test@test.com');
+      expect(prisma.user.findFirst).toHaveBeenCalledWith({
+        where: { email: 'test@test.com', deletedAt: null },
+      });
+      expect(result).toEqual({ id: 'u1', email: 'test@test.com' });
+    });
+  });
+
+  describe('incrementFailedLoginAttempts', () => {
+    it('should increment failed attempts', async () => {
+      mockPrismaService.user.update.mockResolvedValue({ id: 'u1', failedLoginAttempts: 1 });
+      const lockedUntil = new Date();
+      const result = await service.incrementFailedLoginAttempts('u1', lockedUntil);
+      expect(prisma.user.update).toHaveBeenCalledWith({
+        where: { id: 'u1' },
+        data: {
+          failedLoginAttempts: { increment: 1 },
+          lockedUntil,
+        },
+      });
+      expect(result).toEqual({ id: 'u1', failedLoginAttempts: 1 });
+    });
+  });
+
+  describe('resetFailedLoginAttempts', () => {
+    it('should reset failed attempts', async () => {
+      mockPrismaService.user.update.mockResolvedValue({ id: 'u1', failedLoginAttempts: 0 });
+      const result = await service.resetFailedLoginAttempts('u1');
+      expect(prisma.user.update).toHaveBeenCalledWith({
+        where: { id: 'u1' },
+        data: {
+          failedLoginAttempts: 0,
+          lockedUntil: null,
+        },
+      });
+      expect(result).toEqual({ id: 'u1', failedLoginAttempts: 0 });
     });
   });
 });

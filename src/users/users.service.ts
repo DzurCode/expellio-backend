@@ -3,6 +3,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
 import { Prisma } from '@prisma/client';
+import * as bcrypt from 'bcrypt';
 
 @Injectable()
 export class UsersService {
@@ -10,9 +11,14 @@ export class UsersService {
 
   async create(createUserDto: CreateUserDto) {
     try {
-      // In a real app, hash password here before saving
+      const rounds = 10;
+      const hashedPassword = await bcrypt.hash(createUserDto.passwordHash, rounds);
+      const userData = {
+        ...createUserDto,
+        passwordHash: hashedPassword,
+      };
       return await this.prisma.user.create({
-        data: createUserDto,
+        data: userData,
         select: { id: true, email: true, displayName: true, avatarUrl: true, locale: true, timezone: true, createdAt: true },
       });
     } catch (error) {
@@ -99,6 +105,45 @@ export class UsersService {
     } catch (error) {
       if (error instanceof NotFoundException) throw error;
       if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2025') throw new NotFoundException(`User with ID ${id} not found`);
+      throw new InternalServerErrorException('Database error');
+    }
+  }
+
+  async findByEmailForAuth(email: string) {
+    try {
+      // sensitive — exclude in service layer (except for auth module login comparison)
+      return await this.prisma.user.findFirst({
+        where: { email, deletedAt: null },
+      });
+    } catch (error) {
+      throw new InternalServerErrorException('Database error');
+    }
+  }
+
+  async incrementFailedLoginAttempts(userId: string, lockedUntil: Date | null) {
+    try {
+      return await this.prisma.user.update({
+        where: { id: userId },
+        data: {
+          failedLoginAttempts: { increment: 1 },
+          lockedUntil,
+        },
+      });
+    } catch (error) {
+      throw new InternalServerErrorException('Database error');
+    }
+  }
+
+  async resetFailedLoginAttempts(userId: string) {
+    try {
+      return await this.prisma.user.update({
+        where: { id: userId },
+        data: {
+          failedLoginAttempts: 0,
+          lockedUntil: null,
+        },
+      });
+    } catch (error) {
       throw new InternalServerErrorException('Database error');
     }
   }
