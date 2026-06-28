@@ -27,6 +27,12 @@ export class TransactionsController {
     return this.transactionsService.findAll(householdId);
   }
 
+  @Get('summary')
+  @ApiOperation({ summary: 'Get household transaction summary statistics' })
+  getSummary(@Param('householdId') householdId: string) {
+    return this.transactionsService.getSummary(householdId);
+  }
+
   @Get(':id')
   @ApiOperation({ summary: 'Get transaction details' })
   findOne(
