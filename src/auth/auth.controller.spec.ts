@@ -2,6 +2,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { AuthController } from './auth.controller';
 import { AuthService } from './auth.service';
 import { ThrottlerGuard } from '@nestjs/throttler';
+import { Request, Response } from 'express';
 
 describe('AuthController', () => {
   let controller: AuthController;
@@ -15,6 +16,10 @@ describe('AuthController', () => {
   const mockThrottlerGuard = {
     canActivate: jest.fn().mockReturnValue(true),
   };
+
+  const mockResponse = {
+    cookie: jest.fn(),
+  } as unknown as Response;
 
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
@@ -36,28 +41,45 @@ describe('AuthController', () => {
   });
 
   describe('login', () => {
-    it('should call authService.login and return token pair', async () => {
+    it('should call authService.login, set cookies and return success message', async () => {
       const tokens = { accessToken: 'access', refreshToken: 'refresh' };
       mockAuthService.login.mockResolvedValue(tokens);
 
       const dto = { email: 'test@example.com', password: 'password123' };
-      const result = await controller.login(dto);
+      const result = await controller.login(dto, mockResponse);
 
       expect(service.login).toHaveBeenCalledWith('test@example.com', 'password123');
-      expect(result).toBe(tokens);
+      expect(mockResponse.cookie).toHaveBeenCalledWith('access_token', 'access', expect.any(Object));
+      expect(mockResponse.cookie).toHaveBeenCalledWith('refresh_token', 'refresh', expect.any(Object));
+      expect(result).toEqual({ message: 'Logged in successfully' });
     });
   });
 
   describe('refresh', () => {
-    it('should call authService.refresh and return new token pair', async () => {
+    it('should call authService.refresh, set new cookies and return success message', async () => {
       const tokens = { accessToken: 'new-access', refreshToken: 'new-refresh' };
       mockAuthService.refresh.mockResolvedValue(tokens);
 
-      const dto = { refreshToken: 'old-refresh' };
-      const result = await controller.refresh(dto);
+      const mockRequest = {
+        cookies: {
+          refresh_token: 'old-refresh',
+        },
+      } as unknown as Request;
+
+      const result = await controller.refresh(mockRequest, mockResponse);
 
       expect(service.refresh).toHaveBeenCalledWith('old-refresh');
-      expect(result).toBe(tokens);
+      expect(mockResponse.cookie).toHaveBeenCalledWith('access_token', 'new-access', expect.any(Object));
+      expect(mockResponse.cookie).toHaveBeenCalledWith('refresh_token', 'new-refresh', expect.any(Object));
+      expect(result).toEqual({ message: 'Token refreshed successfully' });
+    });
+
+    it('should throw UnauthorizedException if refresh token is missing', async () => {
+      const mockRequest = {
+        cookies: {},
+      } as unknown as Request;
+
+      await expect(controller.refresh(mockRequest, mockResponse)).rejects.toThrow('Refresh token missing');
     });
   });
 });
