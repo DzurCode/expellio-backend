@@ -130,7 +130,7 @@ export class TransactionsService {
     }
   }
 
-  async getSummary(householdId: string) {
+  async getSummary(householdId: string, userId: string) {
     try {
       const now = new Date();
       const currentYear = now.getFullYear();
@@ -198,19 +198,238 @@ export class TransactionsService {
         expenses: data.expenses,
       }));
 
+      // Fetch user to use their timezone settings for date calculation
+      const user = await this.prisma.user.findUnique({
+        where: { id: userId },
+        select: { timezone: true },
+      });
+      const userTimezone = user?.timezone || 'UTC';
+
+      // Formatter to get YYYY-MM-DD in user's timezone
+      const formatter = new Intl.DateTimeFormat('en-US', {
+        timeZone: userTimezone,
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+      });
+      
+      const formatToYmd = (date: Date) => {
+        const parts = formatter.formatToParts(date);
+        const year = parts.find(p => p.type === 'year')?.value;
+        const month = parts.find(p => p.type === 'month')?.value;
+        const day = parts.find(p => p.type === 'day')?.value;
+        return `${year}-${month}-${day}`;
+      };
+
+      const todayStr = formatToYmd(new Date());
+      const yesterdayStr = formatToYmd(new Date(Date.now() - 24 * 60 * 60 * 1000));
+
+      // Fetch all expense transactions for streak calculation
+      const expensesData = await this.prisma.transaction.findMany({
+        where: {
+          createdByUserId: userId,
+          type: 'expense',
+          deletedAt: null,
+        },
+        select: {
+          transactionDate: true,
+        },
+        orderBy: {
+          transactionDate: 'asc',
+        },
+      });
+
+      // Format unique dates (UTC date string from database DATE field)
+      const dates = Array.from(
+        new Set(expensesData.map(e => e.transactionDate.toISOString().split('T')[0]))
+      ).sort();
+
+      const getPreviousDateStr = (dateStr: string): string => {
+        const d = new Date(dateStr + 'T00:00:00.000Z');
+        d.setUTCDate(d.getUTCDate() - 1);
+        return d.toISOString().split('T')[0];
+      };
+
+      // Calculate current streak (up to today or yesterday)
+      let streakDays = 0;
+      const dateSet = new Set(dates);
+      const lastLoggedDate = dateSet.has(todayStr) ? todayStr : (dateSet.has(yesterdayStr) ? yesterdayStr : null);
+      if (lastLoggedDate) {
+        let curr = lastLoggedDate;
+        while (dateSet.has(curr)) {
+          streakDays++;
+          curr = getPreviousDateStr(curr);
+        }
+      }
+
+      // Calculate best streak in a calendar month
+      const datesByMonth: { [key: string]: string[] } = {};
+      for (const date of dates) {
+        const monthKey = date.substring(0, 7); // 'YYYY-MM'
+        if (!datesByMonth[monthKey]) {
+          datesByMonth[monthKey] = [];
+        }
+        datesByMonth[monthKey].push(date);
+      }
+
+      let bestStreakDays = 0;
+      for (const monthKey in datesByMonth) {
+        const monthDates = datesByMonth[monthKey];
+        let currentMonthStreak = 0;
+        let bestMonthStreak = 0;
+        let prevDateStr: string | null = null;
+
+        for (const dateStr of monthDates) {
+          if (prevDateStr === null) {
+            currentMonthStreak = 1;
+          } else {
+            const expectedPrev = getPreviousDateStr(dateStr);
+            if (prevDateStr === expectedPrev) {
+              currentMonthStreak++;
+            } else {
+              currentMonthStreak = 1;
+            }
+          }
+          if (currentMonthStreak > bestMonthStreak) {
+            bestMonthStreak = currentMonthStreak;
+          }
+          prevDateStr = dateStr;
+        }
+
+        if (bestMonthStreak > bestStreakDays) {
+          bestStreakDays = bestMonthStreak;
+        }
+      }
+
+      // Evaluate achievements
+      const allUserTx = await this.prisma.transaction.findMany({
+        where: {
+          createdByUserId: userId,
+          deletedAt: null,
+        },
+        select: {
+          transactionDate: true,
+          type: true,
+          amount: true,
+        },
+      });
+
+      const monthlyTotals: { [key: string]: { income: number; expenses: number } } = {};
+      for (const tx of allUserTx) {
+        const dateStr = tx.transactionDate.toISOString().split('T')[0];
+        const monthKey = dateStr.substring(0, 7);
+        if (!monthlyTotals[monthKey]) {
+          monthlyTotals[monthKey] = { income: 0, expenses: 0 };
+        }
+        const amount = Number(tx.amount);
+        if (tx.type === 'income') {
+          monthlyTotals[monthKey].income += amount;
+        } else if (tx.type === 'expense') {
+          monthlyTotals[monthKey].expenses += amount;
+        }
+      }
+
+      // 1. primeros_pasos: first expense registered
+      const hasPrimerosPasos = dates.length > 0;
+
+      // 2. racha_7: current streak >= 7 days
+      const hasRacha7 = streakDays >= 7;
+
+      // 3. racha_30: current streak >= 30 days
+      const hasRacha30 = streakDays >= 30;
+
+      // 4. constancia: 20+ distinct days of expenses in a month
+      const hasConstancia = Object.values(datesByMonth).some(monthDates => monthDates.length >= 20);
+
+      // 5. ahorro_top: month with highest savings ratio (income - expenses) / income compared to own history
+      const monthlyRatios: { month: string; ratio: number }[] = [];
+      for (const monthKey in monthlyTotals) {
+        const { income, expenses } = monthlyTotals[monthKey];
+        if (income > 0) {
+          const ratio = (income - expenses) / income;
+          monthlyRatios.push({ month: monthKey, ratio });
+        }
+      }
+      const hasAhorroTop = monthlyRatios.length > 0 && monthlyRatios.some(r => r.ratio > 0);
+
+      // 6. ingreso_en_alza: monthly income higher than previous month's
+      let hasIngresoEnAlza = false;
+      const monthKeys = Object.keys(monthlyTotals).sort();
+      if (monthKeys.length > 1) {
+        const firstMonth = monthKeys[0];
+        const lastMonth = monthKeys[monthKeys.length - 1];
+        
+        const allMonths: string[] = [];
+        const current = new Date(firstMonth + '-02T00:00:00.000Z');
+        const end = new Date(lastMonth + '-02T00:00:00.000Z');
+        
+        while (current <= end) {
+          allMonths.push(current.toISOString().substring(0, 7));
+          current.setUTCMonth(current.getUTCMonth() + 1);
+        }
+        
+        for (let i = 1; i < allMonths.length; i++) {
+          const prevIncome = monthlyTotals[allMonths[i - 1]]?.income || 0;
+          const currIncome = monthlyTotals[allMonths[i]]?.income || 0;
+          if (currIncome > prevIncome) {
+            hasIngresoEnAlza = true;
+            break;
+          }
+        }
+      }
+
+      // Idempotently upsert achievements
+      const achievementsToUnlock: string[] = [];
+      if (hasPrimerosPasos) achievementsToUnlock.push('primeros_pasos');
+      if (hasRacha7) achievementsToUnlock.push('racha_7');
+      if (hasRacha30) achievementsToUnlock.push('racha_30');
+      if (hasConstancia) achievementsToUnlock.push('constancia');
+      if (hasAhorroTop) achievementsToUnlock.push('ahorro_top');
+      if (hasIngresoEnAlza) achievementsToUnlock.push('ingreso_en_alza');
+
+      if (achievementsToUnlock.length > 0) {
+        const unlocked = await this.prisma.userAchievement.findMany({
+          where: {
+            userId,
+            achievementId: { in: achievementsToUnlock },
+          },
+          select: { achievementId: true },
+        });
+        const unlockedSet = new Set(unlocked.map(u => u.achievementId));
+        
+        const toCreate = achievementsToUnlock.filter(id => !unlockedSet.has(id));
+        if (toCreate.length > 0) {
+          await this.prisma.userAchievement.createMany({
+            data: toCreate.map(id => ({
+              userId,
+              achievementId: id,
+              unlockedAt: new Date(),
+            })),
+          });
+        }
+      }
+
+      const userAchievements = await this.prisma.userAchievement.findMany({
+        where: { userId },
+        select: {
+          achievementId: true,
+          unlockedAt: true,
+        },
+        orderBy: { unlockedAt: 'asc' },
+      });
+
+      const achievements = userAchievements.map(ua => ({
+        id: ua.achievementId,
+        unlockedAt: ua.unlockedAt,
+      }));
+
       return {
         income,
         expenses,
-        // TODO: backend compute streak based on consecutive days of logged transactions
-        streakDays: 23,
-        bestStreakDays: 31,
+        streakDays,
+        bestStreakDays,
         monthlyData,
-        // TODO: backend compute achievements
-        achievements: [
-          { emoji: '🏆', label: 'Ahorro Top' },
-          { emoji: '⚡', label: 'Velocidad' },
-          { emoji: '🌟', label: '7 Días' },
-        ],
+        achievements,
       };
     } catch (error) {
       throw new InternalServerErrorException('Database error');

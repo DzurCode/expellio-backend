@@ -13,6 +13,7 @@ describe('TransactionsController', () => {
     findOne: jest.fn(),
     update: jest.fn(),
     remove: jest.fn(),
+    getSummary: jest.fn(),
   };
 
   beforeEach(async () => {
@@ -27,6 +28,10 @@ describe('TransactionsController', () => {
     service = module.get<TransactionsService>(TransactionsService);
   });
 
+  afterEach(() => {
+    jest.clearAllMocks();
+  });
+
   it('should be defined', () => {
     expect(controller).toBeDefined();
   });
@@ -38,5 +43,12 @@ describe('TransactionsController', () => {
     const result = await controller.create('h1', { id: 'u1' }, dto as any);
     expect(service.create).toHaveBeenCalledWith('h1', 'u1', dto);
     expect(result.id).toBe('t1');
+  });
+
+  it('should call getSummary on service', async () => {
+    mockTransactionsService.getSummary.mockResolvedValue({ streakDays: 0 });
+    const result = await controller.getSummary('h1', { id: 'u1' });
+    expect(service.getSummary).toHaveBeenCalledWith('h1', 'u1');
+    expect(result).toEqual({ streakDays: 0 });
   });
 });
