@@ -159,6 +159,7 @@ model User {
   goalContributions GoalContribution[]
   aiJobs            AiJob[]
   notifications     Notification[]
+  achievements      UserAchievement[]
 
   @@unique([email], map: "uq_users_email")
   @@index([deletionScheduledAt], map: "idx_users_deletion_scheduled")
@@ -573,5 +574,20 @@ model UsedRefreshToken {
   createdAt DateTime @default(now()) @db.Timestamptz()
 
   @@map("used_refresh_tokens")
+}
+
+model UserAchievement {
+  id            String   @id @default(uuid()) @db.Uuid
+  userId        String   @db.Uuid
+  achievementId String   @db.VarChar(50) /// e.g. "primeros_pasos", "racha_7", etc.
+  unlockedAt    DateTime @default(now()) @db.Timestamptz()
+  createdAt     DateTime @default(now()) @db.Timestamptz()
+
+  // Relations
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, achievementId], map: "uq_user_achievements_user_achievement")
+  @@index([userId], map: "idx_ua_user_id")
+  @@map("user_achievements")
 }
 
