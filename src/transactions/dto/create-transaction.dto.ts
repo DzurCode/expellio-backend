@@ -1,7 +1,7 @@
-import { IsEnum, IsNotEmpty, IsNumber, IsOptional, IsString, IsUUID, ValidateNested, IsDateString } from 'class-validator';
+import { IsEnum, IsNotEmpty, IsNumber, IsOptional, IsString, IsUUID, ValidateNested, IsDateString, IsArray } from 'class-validator';
 import { Type } from 'class-transformer';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { TransactionType, TransactionSource } from '@prisma/client';
+import { TransactionType, TransactionSource, PaymentMethod } from '@prisma/client';
 
 export class TransactionSplitDto {
   @ApiProperty({ description: 'UUID of the user' })
@@ -54,6 +54,22 @@ export class CreateTransactionDto {
   @IsOptional()
   @IsUUID()
   recurringConfigId?: string;
+
+  @ApiPropertyOptional({ enum: PaymentMethod })
+  @IsOptional()
+  @IsEnum(PaymentMethod)
+  paymentMethod?: PaymentMethod;
+
+  @ApiPropertyOptional({ description: 'Extended notes' })
+  @IsOptional()
+  @IsString()
+  notes?: string;
+
+  @ApiPropertyOptional({ type: [String], description: 'Tags associated with the transaction' })
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  tags?: string[];
 
   @ApiPropertyOptional({ type: [TransactionSplitDto], description: 'Optional split details' })
   @IsOptional()

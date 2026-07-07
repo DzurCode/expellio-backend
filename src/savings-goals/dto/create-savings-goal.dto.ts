@@ -22,6 +22,21 @@ export class CreateSavingsGoalDto {
   @IsDateString()
   targetDate?: string;
 
+  @ApiPropertyOptional({ description: 'Description of the savings goal' })
+  @IsOptional()
+  @IsString()
+  description?: string;
+
+  @ApiPropertyOptional({ description: 'Emoji icon identifier' })
+  @IsOptional()
+  @IsString()
+  icon?: string;
+
+  @ApiPropertyOptional({ description: 'Hex color code' })
+  @IsOptional()
+  @IsString()
+  color?: string;
+
   @ApiPropertyOptional({ enum: SavingsGoalStatus, default: SavingsGoalStatus.active })
   @IsOptional()
   @IsEnum(SavingsGoalStatus)
