@@ -61,4 +61,11 @@ export class HouseholdsController {
   ) {
     return this.householdsService.join(user.id, joinHouseholdDto);
   }
+
+  @Post(':id/reset')
+  @HttpCode(200)
+  @ApiOperation({ summary: 'Reset household data (wipe transactions, goals, budgets)' })
+  reset(@Param('id') id: string) {
+    return this.householdsService.reset(id);
+  }
 }

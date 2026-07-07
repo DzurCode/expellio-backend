@@ -168,4 +168,71 @@ export class HouseholdsService {
       throw new InternalServerErrorException('Database error');
     }
   }
+
+  async reset(id: string) {
+    try {
+      await this.findOne(id);
+      return await this.prisma.$transaction(async (tx) => {
+        // 1. Delete transaction splits
+        await tx.transactionSplit.deleteMany({
+          where: { transaction: { householdId: id } },
+        });
+
+        // 2. Delete goal contributions
+        await tx.goalContribution.deleteMany({
+          where: { goal: { householdId: id } },
+        });
+
+        // 3. Delete budget alerts
+        await tx.budgetAlert.deleteMany({
+          where: { householdId: id },
+        });
+
+        // 4. Delete transactions
+        await tx.transaction.deleteMany({
+          where: { householdId: id },
+        });
+
+        // 5. Delete recurring configs
+        await tx.recurringConfig.deleteMany({
+          where: { householdId: id },
+        });
+
+        // 6. Delete budgets
+        await tx.budget.deleteMany({
+          where: { householdId: id },
+        });
+
+        // 7. Delete savings goals
+        await tx.savingsGoal.deleteMany({
+          where: { householdId: id },
+        });
+
+        // 8. Delete weekly summaries
+        await tx.aiWeeklySummary.deleteMany({
+          where: { householdId: id },
+        });
+
+        // 9. Delete AI jobs
+        await tx.aiJob.deleteMany({
+          where: { householdId: id },
+        });
+
+        // 10. Delete notifications
+        await tx.notification.deleteMany({
+          where: { householdId: id },
+        });
+
+        // 11. Delete custom categories
+        await tx.category.deleteMany({
+          where: { householdId: id, isSystem: false },
+        });
+
+        return { message: 'Household data reset successfully' };
+      });
+    } catch (error) {
+      if (error instanceof NotFoundException) throw error;
+      throw new InternalServerErrorException('Database error while resetting household data');
+    }
+  }
 }
