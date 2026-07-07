@@ -19,7 +19,7 @@ export class UsersService {
       };
       return await this.prisma.user.create({
         data: userData,
-        select: { id: true, email: true, displayName: true, avatarUrl: true, locale: true, timezone: true, createdAt: true },
+        select: { id: true, email: true, displayName: true, avatarUrl: true, locale: true, timezone: true, createdAt: true, deletionScheduledAt: true },
       });
     } catch (error) {
       if (error instanceof Prisma.PrismaClientKnownRequestError) {
@@ -33,7 +33,7 @@ export class UsersService {
     try {
       return await this.prisma.user.findMany({
         where: { deletedAt: null },
-        select: { id: true, email: true, displayName: true, avatarUrl: true, locale: true, timezone: true, createdAt: true },
+        select: { id: true, email: true, displayName: true, avatarUrl: true, locale: true, timezone: true, createdAt: true, deletionScheduledAt: true },
       });
     } catch (error) {
       throw new InternalServerErrorException('Database error');
@@ -44,7 +44,7 @@ export class UsersService {
     try {
       const user = await this.prisma.user.findFirst({
         where: { id, deletedAt: null },
-        select: { id: true, email: true, displayName: true, avatarUrl: true, locale: true, timezone: true, createdAt: true },
+        select: { id: true, email: true, displayName: true, avatarUrl: true, locale: true, timezone: true, createdAt: true, deletionScheduledAt: true },
       });
       if (!user) {
         throw new NotFoundException(`User with ID ${id} not found`);
@@ -62,7 +62,7 @@ export class UsersService {
       return await this.prisma.user.update({
         where: { id },
         data: updateUserDto,
-        select: { id: true, email: true, displayName: true, avatarUrl: true, locale: true, timezone: true, createdAt: true, updatedAt: true },
+        select: { id: true, email: true, displayName: true, avatarUrl: true, locale: true, timezone: true, createdAt: true, updatedAt: true, deletionScheduledAt: true },
       });
     } catch (error) {
       if (error instanceof NotFoundException) throw error;
