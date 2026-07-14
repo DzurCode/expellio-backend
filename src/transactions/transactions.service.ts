@@ -32,6 +32,8 @@ export class TransactionsService {
           });
         }
 
+        await this.checkBudgetAlerts(transaction, tx);
+
         return transaction;
       });
     } catch (error) {
@@ -101,6 +103,8 @@ export class TransactionsService {
             });
           }
         }
+
+        await this.checkBudgetAlerts(transaction, tx);
 
         return transaction;
       });
@@ -423,9 +427,50 @@ export class TransactionsService {
         unlockedAt: ua.unlockedAt,
       }));
 
+      // 1. Calculate all-time totals for the household
+      const allTimeTotals = await this.prisma.transaction.groupBy({
+        by: ['type'],
+        where: {
+          householdId,
+          deletedAt: null,
+        },
+        _sum: {
+          amount: true,
+        },
+      });
+
+      let allTimeIncome = 0;
+      let allTimeExpense = 0;
+      for (const group of allTimeTotals) {
+        if (group.type === 'income') {
+          allTimeIncome = Number(group._sum.amount || 0);
+        } else if (group.type === 'expense') {
+          allTimeExpense = Number(group._sum.amount || 0);
+        }
+      }
+      const totalBalance = allTimeIncome - allTimeExpense;
+
+      // 2. Calculate all-time active savings goal contributions
+      const totalSavingsSum = await this.prisma.goalContribution.aggregate({
+        where: {
+          deletedAt: null,
+          goal: {
+            householdId,
+            deletedAt: null,
+          },
+        },
+        _sum: {
+          amount: true,
+        },
+      });
+      const totalSavings = Number(totalSavingsSum._sum.amount || 0);
+      const availableBalance = totalBalance - totalSavings;
+
       return {
         income,
         expenses,
+        totalBalance,
+        availableBalance,
         streakDays,
         bestStreakDays,
         monthlyData,
@@ -433,6 +478,165 @@ export class TransactionsService {
       };
     } catch (error) {
       throw new InternalServerErrorException('Database error');
+    }
+  }
+
+  private getPeriodBoundaries(startDate: Date, periodType: string) {
+    const today = new Date();
+    const budgetStart = new Date(startDate);
+
+    let startOfPeriod = new Date(today);
+    let endOfPeriod = new Date(today);
+
+    if (periodType === 'monthly') {
+      startOfPeriod = new Date(today.getFullYear(), today.getMonth(), 1);
+      endOfPeriod = new Date(today.getFullYear(), today.getMonth() + 1, 0, 23, 59, 59, 999);
+    } else if (periodType === 'weekly') {
+      const day = today.getDay();
+      const diff = today.getDate() - day + (day === 0 ? -6 : 1);
+      startOfPeriod = new Date(today.setDate(diff));
+      startOfPeriod.setHours(0, 0, 0, 0);
+
+      endOfPeriod = new Date(startOfPeriod);
+      endOfPeriod.setDate(startOfPeriod.getDate() + 6);
+      endOfPeriod.setHours(23, 59, 59, 999);
+    } else if (periodType === 'yearly') {
+      startOfPeriod = new Date(today.getFullYear(), 0, 1);
+      endOfPeriod = new Date(today.getFullYear(), 11, 31, 23, 59, 59, 999);
+    } else if (periodType === 'biweekly') {
+      if (today < budgetStart) {
+        startOfPeriod = new Date(budgetStart);
+        endOfPeriod = new Date(budgetStart);
+        endOfPeriod.setDate(budgetStart.getDate() + 14);
+      } else {
+        const msDiff = today.getTime() - budgetStart.getTime();
+        const daysDiff = Math.floor(msDiff / (1000 * 60 * 60 * 24));
+        const intervalIndex = Math.floor(daysDiff / 14);
+
+        startOfPeriod = new Date(budgetStart);
+        startOfPeriod.setDate(budgetStart.getDate() + intervalIndex * 14);
+        startOfPeriod.setHours(0, 0, 0, 0);
+
+        endOfPeriod = new Date(startOfPeriod);
+        endOfPeriod.setDate(startOfPeriod.getDate() + 13);
+        endOfPeriod.setHours(23, 59, 59, 999);
+      }
+    }
+
+    return { start: startOfPeriod, end: endOfPeriod };
+  }
+
+  private async checkBudgetAlerts(tx: any, prismaClient: Prisma.TransactionClient) {
+    try {
+      if (tx.type !== 'expense') return;
+
+      // 1. Find active budget for this category
+      const budget = await prismaClient.budget.findFirst({
+        where: {
+          householdId: tx.householdId,
+          categoryId: tx.categoryId,
+          isActive: true,
+          deletedAt: null,
+        },
+      });
+
+      if (!budget) return;
+
+      // 2. Get period boundaries
+      const { start, end } = this.getPeriodBoundaries(budget.startDate, budget.periodType);
+
+      // 3. Calculate current spent for this category in this period
+      const transactions = await prismaClient.transaction.findMany({
+        where: {
+          householdId: tx.householdId,
+          categoryId: tx.categoryId,
+          type: 'expense',
+          deletedAt: null,
+          transactionDate: {
+            gte: start,
+            lte: end,
+          },
+        },
+      });
+
+      const currentSpent = transactions.reduce((sum, t) => sum + Number(t.amount), 0);
+      const limit = Number(budget.amountLimit);
+      if (limit <= 0) return;
+
+      const percent = (currentSpent / limit) * 100;
+
+      // Determine threshold
+      let threshold = 0;
+      if (percent >= 100) {
+        threshold = 100;
+      } else if (percent >= 80) {
+        threshold = 80;
+      }
+
+      if (threshold === 0) return;
+
+      // 4. Check if alert already triggered in this period
+      const existingAlert = await prismaClient.budgetAlert.findFirst({
+        where: {
+          budgetId: budget.id,
+          thresholdPctReached: threshold,
+          periodStart: start,
+          periodEnd: end,
+          deletedAt: null,
+        },
+      });
+
+      if (existingAlert) return;
+
+      // 5. Create budget alert log
+      await prismaClient.budgetAlert.create({
+        data: {
+          budgetId: budget.id,
+          householdId: tx.householdId,
+          thresholdPctReached: threshold,
+          currentSpent: new Prisma.Decimal(currentSpent),
+          periodStart: start,
+          periodEnd: end,
+        },
+      });
+
+      // 6. Send notifications to all household members
+      const householdMembers = await prismaClient.householdMember.findMany({
+        where: { householdId: tx.householdId, deletedAt: null },
+        select: { userId: true },
+      });
+
+      const category = await prismaClient.category.findUnique({
+        where: { id: tx.categoryId },
+      });
+
+      const categoryName = category ? category.name : 'Categoría';
+      const categoryIcon = category ? category.icon : '📊';
+
+      const title = threshold === 100 
+        ? `Presupuesto Excedido 🚨` 
+        : `Presupuesto al 80% ⚠️`;
+
+      const body = threshold === 100
+        ? `Has excedido el 100% de tu presupuesto para ${categoryIcon} ${categoryName}. Límite: $${limit.toFixed(0)}, gastado: $${currentSpent.toFixed(0)}.`
+        : `Has alcanzado el ${percent.toFixed(0)}% de tu presupuesto para ${categoryIcon} ${categoryName}. Límite: $${limit.toFixed(0)}, gastado: $${currentSpent.toFixed(0)}.`;
+
+      for (const member of householdMembers) {
+        await prismaClient.notification.create({
+          data: {
+            userId: member.userId,
+            householdId: tx.householdId,
+            type: 'budget_alert',
+            title,
+            body,
+            actionUrl: '/budgets',
+            relatedEntityType: 'budget',
+            relatedEntityId: budget.id,
+          },
+        });
+      }
+    } catch (error) {
+      console.error('Failed to check budget alerts:', error);
     }
   }
 }

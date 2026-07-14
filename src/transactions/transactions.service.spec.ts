@@ -15,10 +15,14 @@ describe('TransactionsService', () => {
       findMany: jest.fn(),
       findFirst: jest.fn(),
       update: jest.fn(),
+      groupBy: jest.fn().mockResolvedValue([]),
     },
     transactionSplit: {
       createMany: jest.fn(),
       deleteMany: jest.fn(),
+    },
+    goalContribution: {
+      aggregate: jest.fn().mockResolvedValue({ _sum: { amount: 0 } }),
     },
     user: {
       findUnique: jest.fn(),
