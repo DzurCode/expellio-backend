@@ -47,6 +47,17 @@ export class NotificationsService {
     }
   }
 
+  async markAllRead(userId: string) {
+    try {
+      return await this.prisma.notification.updateMany({
+        where: { userId, isRead: false, deletedAt: null },
+        data: { isRead: true, readAt: new Date() },
+      });
+    } catch (error) {
+      throw new InternalServerErrorException('Database error');
+    }
+  }
+
   async update(id: string, updateNotificationDto: UpdateNotificationDto) {
     try {
       await this.findOne(id);
