@@ -2,6 +2,8 @@ import { Injectable, NotFoundException, ConflictException, InternalServerErrorEx
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateSavingsGoalDto } from './dto/create-savings-goal.dto';
 import { UpdateSavingsGoalDto } from './dto/update-savings-goal.dto';
+import { CreateGoalContributionDto } from './dto/create-goal-contribution.dto';
+import { UpdateGoalContributionDto } from './dto/update-goal-contribution.dto';
 import { Prisma } from '@prisma/client';
 
 @Injectable()
@@ -87,6 +89,213 @@ export class SavingsGoalsService {
         if (error.code === 'P2025') throw new NotFoundException(`SavingsGoal with ID ${id} not found`);
       }
       throw new InternalServerErrorException('Database error');
+    }
+  }
+
+  private async recalculateGoalAmount(tx: Prisma.TransactionClient, goalId: string, userId?: string) {
+    const sumResult = await tx.goalContribution.aggregate({
+      where: { goalId, deletedAt: null },
+      _sum: { amount: true },
+    });
+    const currentAmount = sumResult._sum.amount || new Prisma.Decimal(0);
+    await tx.savingsGoal.update({
+      where: { id: goalId },
+      data: { currentAmount },
+    });
+
+    try {
+      await this.checkGoalMilestones(tx, goalId, userId);
+    } catch (error) {
+      console.error('Failed to check goal milestones:', error);
+    }
+  }
+
+  async addContribution(householdId: string, goalId: string, userId: string, dto: CreateGoalContributionDto) {
+    try {
+      await this.findOne(householdId, goalId);
+
+      return await this.prisma.$transaction(async (tx) => {
+        const contribution = await tx.goalContribution.create({
+          data: {
+            goalId,
+            userId,
+            amount: dto.amount,
+            note: dto.note || null,
+            contributedAt: dto.contributedAt ? new Date(dto.contributedAt) : new Date(),
+          },
+        });
+
+        await this.recalculateGoalAmount(tx, goalId, userId);
+
+        return contribution;
+      });
+    } catch (error) {
+      if (error instanceof NotFoundException) throw error;
+      throw new InternalServerErrorException('Database error');
+    }
+  }
+
+  async findContributions(householdId: string, goalId: string) {
+    try {
+      await this.findOne(householdId, goalId);
+
+      return await this.prisma.goalContribution.findMany({
+        where: { goalId, deletedAt: null },
+        include: {
+          user: {
+            select: {
+              id: true,
+              displayName: true,
+            },
+          },
+        },
+        orderBy: { contributedAt: 'desc' },
+      });
+    } catch (error) {
+      if (error instanceof NotFoundException) throw error;
+      throw new InternalServerErrorException('Database error');
+    }
+  }
+
+  async updateContribution(householdId: string, goalId: string, id: string, dto: UpdateGoalContributionDto) {
+    try {
+      await this.findOne(householdId, goalId);
+
+      const contribution = await this.prisma.goalContribution.findFirst({
+        where: { id, goalId, deletedAt: null },
+      });
+      if (!contribution) {
+        throw new NotFoundException(`GoalContribution with ID ${id} not found`);
+      }
+
+      return await this.prisma.$transaction(async (tx) => {
+        const updateData: any = {};
+        if (dto.amount !== undefined) updateData.amount = dto.amount;
+        if (dto.note !== undefined) updateData.note = dto.note || null;
+        if (dto.contributedAt !== undefined) {
+          updateData.contributedAt = dto.contributedAt ? new Date(dto.contributedAt) : new Date();
+        }
+
+        const updated = await tx.goalContribution.update({
+          where: { id },
+          data: updateData,
+        });
+
+        await this.recalculateGoalAmount(tx, goalId, contribution.userId);
+
+        return updated;
+      });
+    } catch (error) {
+      if (error instanceof NotFoundException) throw error;
+      throw new InternalServerErrorException('Database error');
+    }
+  }
+
+  async removeContribution(householdId: string, goalId: string, id: string) {
+    try {
+      await this.findOne(householdId, goalId);
+
+      const contribution = await this.prisma.goalContribution.findFirst({
+        where: { id, goalId, deletedAt: null },
+      });
+      if (!contribution) {
+        throw new NotFoundException(`GoalContribution with ID ${id} not found`);
+      }
+
+      return await this.prisma.$transaction(async (tx) => {
+        const deleted = await tx.goalContribution.update({
+          where: { id },
+          data: { deletedAt: new Date() },
+        });
+
+        await this.recalculateGoalAmount(tx, goalId, contribution.userId);
+
+        return deleted;
+      });
+    } catch (error) {
+      if (error instanceof NotFoundException) throw error;
+      throw new InternalServerErrorException('Database error');
+    }
+  }
+
+  private async checkGoalMilestones(tx: Prisma.TransactionClient, goalId: string, userId?: string) {
+    const goal = await tx.savingsGoal.findUnique({
+      where: { id: goalId },
+    });
+
+    if (!goal) return;
+
+    const targetAmount = Number(goal.targetAmount);
+    const currentAmount = Number(goal.currentAmount);
+    if (targetAmount <= 0) return;
+
+    const percent = (currentAmount / targetAmount) * 100;
+
+    let milestone = 0;
+    if (percent >= 100) {
+      milestone = 100;
+    } else if (percent >= 75) {
+      milestone = 75;
+    } else if (percent >= 50) {
+      milestone = 50;
+    } else if (percent >= 25) {
+      milestone = 25;
+    }
+
+    if (milestone === 0) return;
+
+    // Check if we already notified the users in the household about this milestone
+    const householdMembers = await tx.householdMember.findMany({
+      where: { householdId: goal.householdId, deletedAt: null },
+      select: { userId: true },
+    });
+
+    for (const member of householdMembers) {
+      const existing = await tx.notification.findFirst({
+        where: {
+          userId: member.userId,
+          type: 'goal_milestone',
+          relatedEntityType: 'goal',
+          relatedEntityId: goalId,
+          body: {
+            contains: `alcanzado el ${milestone}%`,
+          },
+          deletedAt: null,
+        },
+      });
+
+      const existing100 = milestone === 100 ? await tx.notification.findFirst({
+        where: {
+          userId: member.userId,
+          type: 'goal_milestone',
+          relatedEntityType: 'goal',
+          relatedEntityId: goalId,
+          body: {
+            contains: 'completado el 100%',
+          },
+          deletedAt: null,
+        },
+      }) : null;
+
+      if (existing || existing100) continue;
+
+      const title = milestone === 100 ? '¡Meta de Ahorro Completada! 🎯' : '¡Hito de Ahorro Alcanzado! 🚀';
+      const body = milestone === 100
+        ? `¡Felicidades! Has completado el 100% de tu meta de ahorro "${goal.name}". Ahorrado: $${currentAmount.toFixed(0)}.`
+        : `Has alcanzado el ${milestone}% de tu meta de ahorro "${goal.name}". Ahorrado: $${currentAmount.toFixed(0)} de $${targetAmount.toFixed(0)}.`;
+
+      await tx.notification.create({
+        data: {
+          userId: member.userId,
+          householdId: goal.householdId,
+          type: 'goal_milestone',
+          title,
+          body,
+          actionUrl: '/savings-goals',
+          relatedEntityType: 'goal',
+          relatedEntityId: goalId,
+        },
+      });
     }
   }
 }
