@@ -1,24 +1,12 @@
-import { Injectable, NotFoundException, ConflictException, InternalServerErrorException } from '@nestjs/common';
+import { Injectable, NotFoundException, InternalServerErrorException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
-import { CreateAuditLogDto } from './dto/create-audit-log.dto';
 import { Prisma } from '@prisma/client';
 
 @Injectable()
 export class AuditLogService {
   constructor(private prisma: PrismaService) {}
 
-  async create(userId: string, createAuditLogDto: CreateAuditLogDto) {
-    try {
-      return await this.prisma.auditLog.create({
-        data: { ...createAuditLogDto, userId },
-      });
-    } catch (error) {
-      if (error instanceof Prisma.PrismaClientKnownRequestError) {
-        if (error.code === 'P2002') throw new ConflictException('AuditLog duplicate conflict');
-      }
-      throw new InternalServerErrorException('Database error');
-    }
-  }
+
 
   async findAllByHousehold(householdId: string) {
     try {

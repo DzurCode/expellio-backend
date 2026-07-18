@@ -1,23 +1,12 @@
 import { Controller, Get, Post, Body, Param, HttpCode } from '@nestjs/common';
 import { AuditLogService } from './audit-log.service';
-import { CreateAuditLogDto } from './dto/create-audit-log.dto';
 import { ApiTags, ApiOperation } from '@nestjs/swagger';
-import { CurrentUser } from '../auth/decorators/current-user.decorator';
-
 @ApiTags('audit-log')
 @Controller('audit-log')
 export class AuditLogController {
   constructor(private readonly auditLogService: AuditLogService) {}
 
-  @Post()
-  @HttpCode(201)
-  @ApiOperation({ summary: 'Create an audit log entry (Append-only)' })
-  create(
-    @CurrentUser() user: { id: string },
-    @Body() createAuditLogDto: CreateAuditLogDto
-  ) {
-    return this.auditLogService.create(user.id, createAuditLogDto);
-  }
+
 
   @Get('households/:householdId')
   @ApiOperation({ summary: 'List audit logs for a household' })
