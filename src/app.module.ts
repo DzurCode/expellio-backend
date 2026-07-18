@@ -18,9 +18,14 @@ import { NotificationsModule } from './notifications/notifications.module';
 import { AuditLogModule } from './audit-log/audit-log.module';
 import authConfig from './config/auth.config';
 import { AuthModule } from './auth/auth.module';
+import { ClsModule } from 'nestjs-cls';
 
 @Module({
   imports: [
+    ClsModule.forRoot({
+      global: true,
+      middleware: { mount: true },
+    }),
     ConfigModule.forRoot({
       isGlobal: true,
       load: [authConfig],
