@@ -39,10 +39,10 @@ describe('AiJobsService', () => {
 
   describe('create', () => {
     it('should create an AI job', async () => {
-      const dto = { initiatedByUserId: 'u1', jobType: AiJobType.voice_transcription };
-      mockPrismaService.aiJob.create.mockResolvedValue({ id: 'a1', ...dto });
+      const dto = { jobType: AiJobType.voice_transcription };
+      mockPrismaService.aiJob.create.mockResolvedValue({ id: 'a1', ...dto, initiatedByUserId: 'u1', householdId: 'h1' });
 
-      const result = await service.create('h1', dto);
+      const result = await service.create('h1', 'u1', dto as any);
       expect(mockPrismaService.aiJob.create).toHaveBeenCalled();
       expect(result.id).toBe('a1');
     });

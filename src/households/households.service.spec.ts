@@ -17,6 +17,9 @@ describe('HouseholdsService', () => {
     householdMember: {
       create: jest.fn(),
     },
+    notification: {
+      create: jest.fn(),
+    },
     $transaction: jest.fn(async (callback) => {
       return callback(mockPrismaService);
     }),
@@ -139,11 +142,16 @@ describe('HouseholdsService', () => {
     });
 
     it('should add member and clear invite code in transaction', async () => {
-      mockPrismaService.household.findFirst.mockResolvedValue({ id: 'hh1', members: [{}] });
+      mockPrismaService.household.findFirst.mockResolvedValue({
+        id: 'hh1',
+        name: 'My Home',
+        members: [{ role: 'owner', userId: 'user1' }],
+      });
       mockPrismaService.householdMember.create.mockResolvedValue('member');
+      mockPrismaService.notification.create.mockResolvedValue({});
       const dto = { inviteCode: 'code123' };
       const result = await service.join('user2', dto as any);
-      
+
       expect(prisma.$transaction).toHaveBeenCalled();
       expect(prisma.householdMember.create).toHaveBeenCalledWith({
         data: { householdId: 'hh1', userId: 'user2', role: 'member' },

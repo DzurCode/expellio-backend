@@ -1,8 +1,8 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { TransactionsService } from './transactions.service';
 import { PrismaService } from '../prisma/prisma.service';
-import { NotFoundException } from '@nestjs/common';
-import { TransactionType } from '@prisma/client';
+import { NotFoundException, ConflictException, InternalServerErrorException } from '@nestjs/common';
+import { TransactionType, Prisma } from '@prisma/client';
 
 describe('TransactionsService', () => {
   let service: TransactionsService;
@@ -15,7 +15,10 @@ describe('TransactionsService', () => {
       findMany: jest.fn(),
       findFirst: jest.fn(),
       update: jest.fn(),
-      groupBy: jest.fn().mockResolvedValue([]),
+      groupBy: jest.fn().mockResolvedValue([
+        { type: 'income', _sum: { amount: 100 } },
+        { type: 'expense', _sum: { amount: 50 } }
+      ]),
     },
     transactionSplit: {
       createMany: jest.fn(),
@@ -30,6 +33,22 @@ describe('TransactionsService', () => {
     userAchievement: {
       findMany: jest.fn(),
       createMany: jest.fn(),
+    },
+    budget: {
+      findFirst: jest.fn(),
+    },
+    budgetAlert: {
+      findFirst: jest.fn(),
+      create: jest.fn(),
+    },
+    householdMember: {
+      findMany: jest.fn(),
+    },
+    category: {
+      findUnique: jest.fn(),
+    },
+    notification: {
+      create: jest.fn(),
     },
   };
 
@@ -63,6 +82,129 @@ describe('TransactionsService', () => {
       expect(mockPrismaService.transaction.create).toHaveBeenCalled();
       expect(result.id).toBe('t1');
     });
+
+    it('should create a transaction with splits', async () => {
+      const dto = { 
+        categoryId: 'cat1', 
+        amount: 100, 
+        transactionDate: '2023-01-01', 
+        type: TransactionType.expense,
+        splits: [{ amount: 50, userId: 'u1' }, { amount: 50, userId: 'u2' }] 
+      };
+      mockPrismaService.transaction.create.mockResolvedValue({ id: 't1', ...dto });
+
+      const result = await service.create('h1', 'u1', dto as any);
+
+      expect(mockPrismaService.transactionSplit.createMany).toHaveBeenCalled();
+      expect(result.id).toBe('t1');
+    });
+
+    it('should throw ConflictException on Prisma P2002 error', async () => {
+      mockPrismaService.transaction.create.mockRejectedValue(
+        new Prisma.PrismaClientKnownRequestError('conflict', { code: 'P2002', clientVersion: 'x' })
+      );
+      await expect(service.create('h1', 'u1', {} as any)).rejects.toThrow(ConflictException);
+    });
+
+    it('should throw InternalServerErrorException on unexpected error', async () => {
+      mockPrismaService.transaction.create.mockRejectedValue(new Error('DB Error'));
+      await expect(service.create('h1', 'u1', {} as any)).rejects.toThrow(InternalServerErrorException);
+    });
+
+    it('should check budget alerts and create notifications if threshold exceeded', async () => {
+      const dto = { categoryId: 'cat1', amount: 100, transactionDate: '2023-01-01', type: TransactionType.expense };
+      mockPrismaService.transaction.create.mockResolvedValue({ id: 't1', ...dto, householdId: 'h1' });
+      
+      mockPrismaService.budget.findFirst.mockResolvedValue({ 
+        id: 'b1', amountLimit: 100, startDate: new Date('2023-01-01'), periodType: 'monthly' 
+      });
+      mockPrismaService.transaction.findMany.mockResolvedValue([{ amount: 100 }]);
+      mockPrismaService.budgetAlert.findFirst.mockResolvedValue(null);
+      mockPrismaService.householdMember.findMany.mockResolvedValue([{ userId: 'u2' }]);
+      mockPrismaService.category.findUnique.mockResolvedValue({ name: 'Food', icon: '🍔' });
+
+      await service.create('h1', 'u1', dto as any);
+
+      expect(mockPrismaService.budgetAlert.create).toHaveBeenCalled();
+      expect(mockPrismaService.notification.create).toHaveBeenCalled();
+    });
+
+    it('should check budget alerts and handle 80% threshold and weekly period', async () => {
+      const dto = { categoryId: 'cat1', amount: 80, transactionDate: '2023-01-01', type: TransactionType.expense };
+      mockPrismaService.transaction.create.mockResolvedValue({ id: 't2', ...dto, householdId: 'h1' });
+      
+      mockPrismaService.budget.findFirst.mockResolvedValue({ 
+        id: 'b1', amountLimit: 100, startDate: new Date('2023-01-01'), periodType: 'weekly' 
+      });
+      mockPrismaService.transaction.findMany.mockResolvedValue([{ amount: 80 }]);
+      mockPrismaService.budgetAlert.findFirst.mockResolvedValue(null);
+      
+      await service.create('h1', 'u1', dto as any);
+
+      expect(mockPrismaService.budgetAlert.create).toHaveBeenCalledWith(expect.objectContaining({
+        data: expect.objectContaining({ thresholdPctReached: 80 })
+      }));
+    });
+
+    it('should check budget alerts and handle biweekly period', async () => {
+      const dto = { categoryId: 'cat1', amount: 100, transactionDate: '2023-01-01', type: TransactionType.expense };
+      mockPrismaService.transaction.create.mockResolvedValue({ id: 't3', ...dto, householdId: 'h1' });
+      
+      // Test biweekly period logic for both before and after start date.
+      // Easiest is to set budget startDate in future
+      const futureDate = new Date();
+      futureDate.setDate(futureDate.getDate() + 15);
+      mockPrismaService.budget.findFirst.mockResolvedValue({ 
+        id: 'b1', amountLimit: 100, startDate: futureDate, periodType: 'biweekly' 
+      });
+      mockPrismaService.transaction.findMany.mockResolvedValue([{ amount: 100 }]);
+      mockPrismaService.budgetAlert.findFirst.mockResolvedValue(null);
+      
+      await service.create('h1', 'u1', dto as any);
+
+      expect(mockPrismaService.budgetAlert.create).toHaveBeenCalled();
+    });
+    
+    it('should check budget alerts and handle yearly period', async () => {
+      const dto = { categoryId: 'cat1', amount: 100, transactionDate: '2023-01-01', type: TransactionType.expense };
+      mockPrismaService.transaction.create.mockResolvedValue({ id: 't4', ...dto, householdId: 'h1' });
+      
+      mockPrismaService.budget.findFirst.mockResolvedValue({ 
+        id: 'b1', amountLimit: 100, startDate: new Date(), periodType: 'yearly' 
+      });
+      mockPrismaService.transaction.findMany.mockResolvedValue([{ amount: 100 }]);
+      mockPrismaService.budgetAlert.findFirst.mockResolvedValue(null);
+      
+      await service.create('h1', 'u1', dto as any);
+
+      expect(mockPrismaService.budgetAlert.create).toHaveBeenCalled();
+    });
+
+    it('should catch and log error if checkBudgetAlerts fails', async () => {
+      const consoleSpy = jest.spyOn(console, 'error').mockImplementation();
+      const dto = { categoryId: 'cat1', amount: 100, transactionDate: '2023-01-01', type: TransactionType.expense };
+      mockPrismaService.transaction.create.mockResolvedValue({ id: 't4', ...dto, householdId: 'h1' });
+      
+      mockPrismaService.budget.findFirst.mockRejectedValue(new Error('Budget DB Error'));
+
+      await service.create('h1', 'u1', dto as any);
+
+      expect(consoleSpy).toHaveBeenCalledWith('Failed to check budget alerts:', expect.any(Error));
+      consoleSpy.mockRestore();
+    });
+  });
+
+  describe('findAll', () => {
+    it('should return an array of transactions', async () => {
+      mockPrismaService.transaction.findMany.mockResolvedValue([{ id: 't1' }]);
+      const result = await service.findAll('h1');
+      expect(result).toEqual([{ id: 't1' }]);
+    });
+
+    it('should throw InternalServerErrorException on unexpected database error', async () => {
+      mockPrismaService.transaction.findMany.mockRejectedValue(new Error('DB Error'));
+      await expect(service.findAll('h1')).rejects.toThrow(InternalServerErrorException);
+    });
   });
 
   describe('findOne', () => {
@@ -75,6 +217,99 @@ describe('TransactionsService', () => {
     it('should throw NotFoundException if not found', async () => {
       mockPrismaService.transaction.findFirst.mockResolvedValue(null);
       await expect(service.findOne('h1', 't2')).rejects.toThrow(NotFoundException);
+    });
+
+    it('should throw InternalServerErrorException on unexpected database error', async () => {
+      mockPrismaService.transaction.findFirst.mockRejectedValue(new Error('DB Error'));
+      await expect(service.findOne('h1', 't3')).rejects.toThrow(InternalServerErrorException);
+    });
+  });
+
+  describe('update', () => {
+    it('should update a transaction without splits', async () => {
+      mockPrismaService.transaction.findFirst.mockResolvedValue({ id: 't1' });
+      mockPrismaService.transaction.update.mockResolvedValue({ id: 't1', amount: 200 });
+
+      const dto = { amount: 200 };
+      const result = await service.update('h1', 't1', dto as any);
+
+      expect(mockPrismaService.transaction.update).toHaveBeenCalled();
+      expect(result.amount).toBe(200);
+    });
+
+    it('should update a transaction with splits', async () => {
+      mockPrismaService.transaction.findFirst.mockResolvedValue({ id: 't1' });
+      mockPrismaService.transaction.update.mockResolvedValue({ id: 't1', amount: 200 });
+
+      const dto = { 
+        amount: 200, 
+        transactionDate: '2023-01-01',
+        splits: [{ amount: 100, userId: 'u1' }, { amount: 100, userId: 'u2' }] 
+      };
+      await service.update('h1', 't1', dto as any);
+
+      expect(mockPrismaService.transactionSplit.deleteMany).toHaveBeenCalled();
+      expect(mockPrismaService.transactionSplit.createMany).toHaveBeenCalled();
+    });
+
+    it('should throw NotFoundException if not found during update', async () => {
+      mockPrismaService.transaction.findFirst.mockResolvedValue(null);
+      await expect(service.update('h1', 't2', {} as any)).rejects.toThrow(NotFoundException);
+    });
+
+    it('should throw NotFoundException on Prisma P2025 error', async () => {
+      mockPrismaService.transaction.findFirst.mockResolvedValue({ id: 't1' });
+      mockPrismaService.transaction.update.mockRejectedValue(
+        new Prisma.PrismaClientKnownRequestError('not found', { code: 'P2025', clientVersion: 'x' })
+      );
+      await expect(service.update('h1', 't1', {} as any)).rejects.toThrow(NotFoundException);
+    });
+
+    it('should throw ConflictException on Prisma P2002 error', async () => {
+      mockPrismaService.transaction.findFirst.mockResolvedValue({ id: 't1' });
+      mockPrismaService.transaction.update.mockRejectedValue(
+        new Prisma.PrismaClientKnownRequestError('conflict', { code: 'P2002', clientVersion: 'x' })
+      );
+      await expect(service.update('h1', 't1', {} as any)).rejects.toThrow(ConflictException);
+    });
+
+    it('should throw InternalServerErrorException on unexpected error during update', async () => {
+      mockPrismaService.transaction.findFirst.mockResolvedValue({ id: 't1' });
+      mockPrismaService.transaction.update.mockRejectedValue(new Error('DB Error'));
+      await expect(service.update('h1', 't1', {} as any)).rejects.toThrow(InternalServerErrorException);
+    });
+  });
+
+  describe('remove', () => {
+    it('should mark a transaction as deleted', async () => {
+      mockPrismaService.transaction.findFirst.mockResolvedValue({ id: 't1' });
+      mockPrismaService.transaction.update.mockResolvedValue({ id: 't1', deletedAt: new Date() });
+
+      const result = await service.remove('h1', 't1');
+      expect(mockPrismaService.transaction.update).toHaveBeenCalledWith({
+        where: { id: 't1' },
+        data: { deletedAt: expect.any(Date) },
+      });
+      expect(result.deletedAt).toBeInstanceOf(Date);
+    });
+
+    it('should throw NotFoundException if not found during remove', async () => {
+      mockPrismaService.transaction.findFirst.mockResolvedValue(null);
+      await expect(service.remove('h1', 't2')).rejects.toThrow(NotFoundException);
+    });
+
+    it('should throw NotFoundException on Prisma P2025 error during remove', async () => {
+      mockPrismaService.transaction.findFirst.mockResolvedValue({ id: 't1' });
+      mockPrismaService.transaction.update.mockRejectedValue(
+        new Prisma.PrismaClientKnownRequestError('not found', { code: 'P2025', clientVersion: 'x' })
+      );
+      await expect(service.remove('h1', 't1')).rejects.toThrow(NotFoundException);
+    });
+
+    it('should throw InternalServerErrorException on unexpected error during remove', async () => {
+      mockPrismaService.transaction.findFirst.mockResolvedValue({ id: 't1' });
+      mockPrismaService.transaction.update.mockRejectedValue(new Error('DB Error'));
+      await expect(service.remove('h1', 't1')).rejects.toThrow(InternalServerErrorException);
     });
   });
 
@@ -218,7 +453,8 @@ describe('TransactionsService', () => {
       }
 
       mockPrismaService.transaction.findMany.mockImplementation((args) => {
-        if (args.where.householdId) return Promise.resolve([]);
+        if (args.where.householdId && args.where.categoryId) return Promise.resolve([]); // budget check
+        if (args.where.householdId) return Promise.resolve(mockAllUserTx);
         if (args.where.createdByUserId && args.where.type === 'expense') return Promise.resolve(mockStreakTx);
         if (args.where.createdByUserId) return Promise.resolve(mockAllUserTxWithExpenses);
         return Promise.resolve([]);
@@ -243,6 +479,10 @@ describe('TransactionsService', () => {
       expect(achievementIds).toContain('constancia');
       expect(achievementIds).toContain('ahorro_top');
       expect(achievementIds).toContain('ingreso_en_alza');
+    });
+    it('should throw InternalServerErrorException on unexpected database error', async () => {
+      mockPrismaService.transaction.findMany.mockRejectedValue(new Error('DB Error'));
+      await expect(service.getSummary('h1', 'u1')).rejects.toThrow(InternalServerErrorException);
     });
   });
 });

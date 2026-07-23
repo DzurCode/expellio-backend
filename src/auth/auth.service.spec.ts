@@ -142,6 +142,14 @@ describe('AuthService', () => {
         refreshToken: 'mock-token',
       });
     });
+
+    it('should throw InternalServerErrorException on unexpected database error', async () => {
+      mockUsersService.findByEmailForAuth.mockRejectedValue(new Error('Unexpected DB error'));
+
+      await expect(service.login('user@test.com', 'password')).rejects.toThrow(
+        require('@nestjs/common').InternalServerErrorException,
+      );
+    });
   });
 
   describe('refresh', () => {
@@ -206,6 +214,39 @@ describe('AuthService', () => {
       mockUsersService.findOne.mockResolvedValue(null);
 
       await expect(service.refresh('token')).rejects.toThrow(UnauthorizedException);
+    });
+
+    it('should throw UnauthorizedException on Prisma P2002 error', async () => {
+      mockJwtService.verifyAsync.mockResolvedValue({
+        sub: 'u1',
+        email: 'user@test.com',
+        jti: 'jti-4',
+        exp: Math.floor(Date.now() / 1000) + 100,
+      });
+      mockPrismaService.usedRefreshToken.findUnique.mockResolvedValue(null);
+      const { Prisma } = require('@prisma/client');
+      mockPrismaService.usedRefreshToken.create.mockRejectedValue(
+        new Prisma.PrismaClientKnownRequestError('Unique constraint failed', {
+          code: 'P2002',
+          clientVersion: 'x.x.x',
+        }),
+      );
+
+      await expect(service.refresh('token')).rejects.toThrow(UnauthorizedException);
+    });
+
+    it('should throw InternalServerErrorException on unexpected database error', async () => {
+      mockJwtService.verifyAsync.mockResolvedValue({
+        sub: 'u1',
+        email: 'user@test.com',
+        jti: 'jti-5',
+        exp: Math.floor(Date.now() / 1000) + 100,
+      });
+      mockPrismaService.usedRefreshToken.findUnique.mockRejectedValue(new Error('Unexpected DB error'));
+
+      await expect(service.refresh('token')).rejects.toThrow(
+        require('@nestjs/common').InternalServerErrorException,
+      );
     });
   });
 });

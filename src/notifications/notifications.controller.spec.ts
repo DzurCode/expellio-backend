@@ -7,11 +7,10 @@ describe('NotificationsController', () => {
   let service: NotificationsService;
 
   const mockNotificationsService = {
-    create: jest.fn(),
     findAllByUser: jest.fn(),
     findOne: jest.fn(),
-    update: jest.fn(),
     remove: jest.fn(),
+    deleteAll: jest.fn(),
   };
 
   beforeEach(async () => {
@@ -26,14 +25,31 @@ describe('NotificationsController', () => {
     service = module.get<NotificationsService>(NotificationsService);
   });
 
+  afterEach(() => {
+    jest.clearAllMocks();
+  });
+
   it('should be defined', () => {
     expect(controller).toBeDefined();
   });
 
-  it('should call findAllByUser on service', async () => {
+  it('findAll delegates to findAllByUser with userId', async () => {
     mockNotificationsService.findAllByUser.mockResolvedValue([{ id: 'n1' }]);
     const result = await controller.findAll({ id: 'u1' });
     expect(service.findAllByUser).toHaveBeenCalledWith('u1');
     expect(result).toHaveLength(1);
   });
+
+  it('remove delegates to remove with id and userId', async () => {
+    mockNotificationsService.remove.mockResolvedValue(undefined);
+    await controller.remove('n1', { id: 'u1' });
+    expect(service.remove).toHaveBeenCalledWith('n1', 'u1');
+  });
+
+  it('deleteAll delegates to deleteAll with userId', async () => {
+    mockNotificationsService.deleteAll.mockResolvedValue({ count: 2 });
+    await controller.deleteAll({ id: 'u1' });
+    expect(service.deleteAll).toHaveBeenCalledWith('u1');
+  });
 });
+

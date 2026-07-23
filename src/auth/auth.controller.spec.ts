@@ -19,6 +19,7 @@ describe('AuthController', () => {
 
   const mockResponse = {
     cookie: jest.fn(),
+    clearCookie: jest.fn(),
   } as unknown as Response;
 
   beforeEach(async () => {
@@ -80,6 +81,16 @@ describe('AuthController', () => {
       } as unknown as Request;
 
       await expect(controller.refresh(mockRequest, mockResponse)).rejects.toThrow('Refresh token missing');
+    });
+  });
+
+  describe('logout', () => {
+    it('should clear cookies and return success message', async () => {
+      const result = await controller.logout(mockResponse);
+
+      expect(mockResponse.clearCookie).toHaveBeenCalledWith('access_token');
+      expect(mockResponse.clearCookie).toHaveBeenCalledWith('refresh_token');
+      expect(result).toEqual({ message: 'Logged out successfully' });
     });
   });
 });
