@@ -17,6 +17,7 @@ import { AiJobsModule } from './ai-jobs/ai-jobs.module';
 import { NotificationsModule } from './notifications/notifications.module';
 import { AuditLogModule } from './audit-log/audit-log.module';
 import authConfig from './config/auth.config';
+import appConfig from './config/app.config';
 import { AuthModule } from './auth/auth.module';
 import { ClsModule } from 'nestjs-cls';
 
@@ -28,7 +29,7 @@ import { ClsModule } from 'nestjs-cls';
     }),
     ConfigModule.forRoot({
       isGlobal: true,
-      load: [authConfig],
+      load: [authConfig, appConfig],
     }),
     PrismaModule,
     CurrenciesModule,
