@@ -244,58 +244,64 @@ export class SavingsGoalsService {
 
     if (milestone === 0) return;
 
-    // Check if we already notified the users in the household about this milestone
     const householdMembers = await tx.householdMember.findMany({
       where: { householdId: goal.householdId, deletedAt: null },
       select: { userId: true },
     });
 
     for (const member of householdMembers) {
-      const existing = await tx.notification.findFirst({
-        where: {
-          userId: member.userId,
-          type: 'goal_milestone',
-          relatedEntityType: 'goal',
-          relatedEntityId: goalId,
-          body: {
-            contains: `alcanzado el ${milestone}%`,
+      if (milestone === 100) {
+        // goal_completed: check deduplication by type
+        const existing = await tx.notification.findFirst({
+          where: {
+            userId: member.userId,
+            type: 'goal_completed',
+            relatedEntityType: 'goal',
+            relatedEntityId: goalId,
+            deletedAt: null,
           },
-          deletedAt: null,
-        },
-      });
+        });
+        if (existing) continue;
 
-      const existing100 = milestone === 100 ? await tx.notification.findFirst({
-        where: {
-          userId: member.userId,
-          type: 'goal_milestone',
-          relatedEntityType: 'goal',
-          relatedEntityId: goalId,
-          body: {
-            contains: 'completado el 100%',
+        await tx.notification.create({
+          data: {
+            userId: member.userId,
+            householdId: goal.householdId,
+            type: 'goal_completed',
+            title: '¡Meta de Ahorro Completada! 🎯',
+            body: `¡Felicidades! Has completado el 100% de tu meta "${goal.name}". Ahorrado: $${currentAmount.toFixed(0)}.`,
+            actionUrl: '/savings-goals',
+            relatedEntityType: 'goal',
+            relatedEntityId: goalId,
           },
-          deletedAt: null,
-        },
-      }) : null;
+        });
+      } else {
+        // goal_milestone: check deduplication by percentage in body
+        const existing = await tx.notification.findFirst({
+          where: {
+            userId: member.userId,
+            type: 'goal_milestone',
+            relatedEntityType: 'goal',
+            relatedEntityId: goalId,
+            body: { contains: `alcanzado el ${milestone}%` },
+            deletedAt: null,
+          },
+        });
+        if (existing) continue;
 
-      if (existing || existing100) continue;
-
-      const title = milestone === 100 ? '¡Meta de Ahorro Completada! 🎯' : '¡Hito de Ahorro Alcanzado! 🚀';
-      const body = milestone === 100
-        ? `¡Felicidades! Has completado el 100% de tu meta de ahorro "${goal.name}". Ahorrado: $${currentAmount.toFixed(0)}.`
-        : `Has alcanzado el ${milestone}% de tu meta de ahorro "${goal.name}". Ahorrado: $${currentAmount.toFixed(0)} de $${targetAmount.toFixed(0)}.`;
-
-      await tx.notification.create({
-        data: {
-          userId: member.userId,
-          householdId: goal.householdId,
-          type: 'goal_milestone',
-          title,
-          body,
-          actionUrl: '/savings-goals',
-          relatedEntityType: 'goal',
-          relatedEntityId: goalId,
-        },
-      });
+        await tx.notification.create({
+          data: {
+            userId: member.userId,
+            householdId: goal.householdId,
+            type: 'goal_milestone',
+            title: '¡Hito de Ahorro Alcanzado! 🚀',
+            body: `Has alcanzado el ${milestone}% de tu meta "${goal.name}". Ahorrado: $${currentAmount.toFixed(0)} de $${targetAmount.toFixed(0)}.`,
+            actionUrl: '/savings-goals',
+            relatedEntityType: 'goal',
+            relatedEntityId: goalId,
+          },
+        });
+      }
     }
   }
 }

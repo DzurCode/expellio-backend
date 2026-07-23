@@ -1,44 +1,49 @@
-import { Injectable, NotFoundException, ConflictException, InternalServerErrorException } from '@nestjs/common';
+import {
+  Injectable,
+  NotFoundException,
+  InternalServerErrorException,
+} from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
-import { CreateNotificationDto } from './dto/create-notification.dto';
-import { UpdateNotificationDto } from './dto/update-notification.dto';
 import { Prisma } from '@prisma/client';
 
 @Injectable()
 export class NotificationsService {
-  constructor(private prisma: PrismaService) {}
+  constructor(private readonly prisma: PrismaService) {}
 
-  async create(userId: string, createNotificationDto: CreateNotificationDto) {
+  /// Creates a notification. Internal use only — not exposed via controller.
+  async create(data: Prisma.NotificationUncheckedCreateInput) {
     try {
       return await this.prisma.notification.create({
-        data: { ...createNotificationDto, userId },
+        data,
       });
     } catch (error) {
       if (error instanceof Prisma.PrismaClientKnownRequestError) {
-        if (error.code === 'P2002') throw new ConflictException('Notification duplicate conflict');
+        if (error.code === 'P2002') return null;
       }
       throw new InternalServerErrorException('Database error');
     }
   }
 
+  /// Returns all undeleted notifications for the given user, newest first.
   async findAllByUser(userId: string) {
     try {
       return await this.prisma.notification.findMany({
         where: { userId, deletedAt: null },
         orderBy: { createdAt: 'desc' },
       });
-    } catch (error) {
+    } catch {
       throw new InternalServerErrorException('Database error');
     }
   }
 
-  async findOne(id: string) {
+  /// Returns a single notification, scoped to the requesting user.
+  async findOne(id: string, userId: string) {
     try {
       const notification = await this.prisma.notification.findFirst({
-        where: { id, deletedAt: null },
+        where: { id, userId, deletedAt: null },
       });
       if (!notification) {
-        throw new NotFoundException(`Notification with ID ${id} not found`);
+        throw new NotFoundException(`Notification ${id} not found`);
       }
       return notification;
     } catch (error) {
@@ -47,45 +52,10 @@ export class NotificationsService {
     }
   }
 
-  async markAllRead(userId: string) {
+  /// Soft-deletes a single notification, scoped to the requesting user.
+  async remove(id: string, userId: string) {
     try {
-      return await this.prisma.notification.updateMany({
-        where: { userId, isRead: false, deletedAt: null },
-        data: { isRead: true, readAt: new Date() },
-      });
-    } catch (error) {
-      throw new InternalServerErrorException('Database error');
-    }
-  }
-
-  async update(id: string, updateNotificationDto: UpdateNotificationDto) {
-    try {
-      await this.findOne(id);
-      
-      const updateData: any = { ...updateNotificationDto };
-      if (updateNotificationDto.isRead === true) {
-        updateData.readAt = new Date();
-      }
-      if (updateNotificationDto.isPushed === true) {
-        updateData.pushedAt = new Date();
-      }
-
-      return await this.prisma.notification.update({
-        where: { id },
-        data: updateData,
-      });
-    } catch (error) {
-      if (error instanceof NotFoundException) throw error;
-      if (error instanceof Prisma.PrismaClientKnownRequestError) {
-        if (error.code === 'P2025') throw new NotFoundException(`Notification with ID ${id} not found`);
-      }
-      throw new InternalServerErrorException('Database error');
-    }
-  }
-
-  async remove(id: string) {
-    try {
-      await this.findOne(id);
+      await this.findOne(id, userId);
       return await this.prisma.notification.update({
         where: { id },
         data: { deletedAt: new Date() },
@@ -93,8 +63,22 @@ export class NotificationsService {
     } catch (error) {
       if (error instanceof NotFoundException) throw error;
       if (error instanceof Prisma.PrismaClientKnownRequestError) {
-        if (error.code === 'P2025') throw new NotFoundException(`Notification with ID ${id} not found`);
+        if (error.code === 'P2025') {
+          throw new NotFoundException(`Notification ${id} not found`);
+        }
       }
+      throw new InternalServerErrorException('Database error');
+    }
+  }
+
+  /// Soft-deletes ALL notifications for the requesting user.
+  async deleteAll(userId: string) {
+    try {
+      return await this.prisma.notification.updateMany({
+        where: { userId, deletedAt: null },
+        data: { deletedAt: new Date() },
+      });
+    } catch {
       throw new InternalServerErrorException('Database error');
     }
   }

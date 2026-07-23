@@ -158,6 +158,37 @@ export class HouseholdsService {
           },
         });
 
+        // Notify the household owner about the new member
+        const owner = household.members.find((m) => m.role === 'owner');
+        if (owner) {
+          await tx.notification.create({
+            data: {
+              userId: owner.userId,
+              householdId: household.id,
+              type: 'household_invite',
+              title: 'Nuevo miembro en tu hogar 👥',
+              body: `Un nuevo miembro se ha unido a "${household.name}".`,
+              actionUrl: '/settings',
+              relatedEntityType: 'household',
+              relatedEntityId: household.id,
+            },
+          });
+        }
+
+        // Notify the joining user
+        await tx.notification.create({
+          data: {
+            userId,
+            householdId: household.id,
+            type: 'household_invite',
+            title: '¡Te has unido a un hogar! 🏠',
+            body: `Ahora eres miembro de "${household.name}". ¡Bienvenido!`,
+            actionUrl: '/settings',
+            relatedEntityType: 'household',
+            relatedEntityId: household.id,
+          },
+        });
+
         return member;
       });
     } catch (error) {

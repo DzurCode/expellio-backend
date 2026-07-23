@@ -56,9 +56,16 @@ export class BudgetsService {
   async update(householdId: string, id: string, updateBudgetDto: UpdateBudgetDto) {
     try {
       await this.findOne(householdId, id);
+
+      const { startDate, ...rest } = updateBudgetDto;
+      const dataToUpdate: Prisma.BudgetUpdateInput = { ...rest };
+      if (startDate) {
+        dataToUpdate.startDate = new Date(startDate);
+      }
+
       return await this.prisma.budget.update({
         where: { id },
-        data: updateBudgetDto,
+        data: dataToUpdate,
       });
     } catch (error) {
       if (error instanceof NotFoundException) throw error;

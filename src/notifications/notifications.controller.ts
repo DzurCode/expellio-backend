@@ -1,8 +1,6 @@
-import { Controller, Get, Post, Body, Patch, Param, Delete, HttpCode } from '@nestjs/common';
+import { Controller, Get, Param, Delete, HttpCode } from '@nestjs/common';
 import { NotificationsService } from './notifications.service';
-import { CreateNotificationDto } from './dto/create-notification.dto';
-import { UpdateNotificationDto } from './dto/update-notification.dto';
-import { ApiTags, ApiOperation } from '@nestjs/swagger';
+import { ApiTags, ApiOperation, ApiResponse } from '@nestjs/swagger';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 
 @ApiTags('notifications')
@@ -10,46 +8,37 @@ import { CurrentUser } from '../auth/decorators/current-user.decorator';
 export class NotificationsController {
   constructor(private readonly notificationsService: NotificationsService) {}
 
-  @Post()
-  @HttpCode(201)
-  @ApiOperation({ summary: 'Create a notification' })
-  create(
-    @CurrentUser() user: { id: string },
-    @Body() createNotificationDto: CreateNotificationDto,
-  ) {
-    return this.notificationsService.create(user.id, createNotificationDto);
-  }
-
   @Get()
-  @ApiOperation({ summary: 'List notifications for user' })
+  @ApiOperation({ summary: 'List all notifications for the authenticated user' })
   findAll(@CurrentUser() user: { id: string }) {
     return this.notificationsService.findAllByUser(user.id);
   }
 
   @Get(':id')
-  @ApiOperation({ summary: 'Get notification details' })
-  findOne(@Param('id') id: string) {
-    return this.notificationsService.findOne(id);
-  }
-
-  @Patch('mark-all-read')
-  @ApiOperation({ summary: 'Mark all notifications as read' })
-  markAllRead(@CurrentUser() user: { id: string }) {
-    return this.notificationsService.markAllRead(user.id);
-  }
-
-  @Patch(':id')
-  @ApiOperation({ summary: 'Update notification (e.g. mark as read)' })
-  update(
+  @ApiOperation({ summary: 'Get a single notification (ownership enforced)' })
+  @ApiResponse({ status: 404, description: 'Notification not found or does not belong to user' })
+  findOne(
     @Param('id') id: string,
-    @Body() updateNotificationDto: UpdateNotificationDto,
+    @CurrentUser() user: { id: string },
   ) {
-    return this.notificationsService.update(id, updateNotificationDto);
+    return this.notificationsService.findOne(id, user.id);
+  }
+
+  @Delete()
+  @HttpCode(204)
+  @ApiOperation({ summary: 'Delete (dismiss) all notifications for the authenticated user' })
+  deleteAll(@CurrentUser() user: { id: string }) {
+    return this.notificationsService.deleteAll(user.id);
   }
 
   @Delete(':id')
-  @ApiOperation({ summary: 'Soft delete a notification' })
-  remove(@Param('id') id: string) {
-    return this.notificationsService.remove(id);
+  @HttpCode(204)
+  @ApiOperation({ summary: 'Delete (dismiss) a single notification (ownership enforced)' })
+  @ApiResponse({ status: 404, description: 'Notification not found or does not belong to user' })
+  remove(
+    @Param('id') id: string,
+    @CurrentUser() user: { id: string },
+  ) {
+    return this.notificationsService.remove(id, user.id);
   }
 }

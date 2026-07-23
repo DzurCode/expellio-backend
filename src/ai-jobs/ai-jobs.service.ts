@@ -53,11 +53,38 @@ export class AiJobsService {
 
   async update(householdId: string, id: string, updateAiJobDto: UpdateAiJobDto) {
     try {
-      await this.findOne(householdId, id);
-      return await this.prisma.aiJob.update({
+      const existing = await this.findOne(householdId, id);
+      const updated = await this.prisma.aiJob.update({
         where: { id },
         data: updateAiJobDto,
       });
+
+      const newStatus = updateAiJobDto.status;
+      const wasTerminal = newStatus === 'completed' || newStatus === 'failed';
+      const wasAlreadyTerminal =
+        existing.status === 'completed' || existing.status === 'failed';
+
+      if (wasTerminal && !wasAlreadyTerminal) {
+        const isSuccess = newStatus === 'completed';
+        // TODO: weekly_summary — implement notification via a cron scheduler
+        await this.prisma.notification.create({
+          data: {
+            userId: existing.initiatedByUserId,
+            householdId,
+            type: 'ai_complete',
+            title: isSuccess
+              ? 'Análisis de IA completado ✅'
+              : 'Análisis de IA fallido ⚠️',
+            body: isSuccess
+              ? `Tu análisis ha terminado: ${updated.resultSummary ?? 'sin detalles'}.`
+              : `El análisis falló: ${updated.errorMessage ?? 'error desconocido'}.`,
+            relatedEntityType: 'ai_job',
+            relatedEntityId: id,
+          },
+        });
+      }
+
+      return updated;
     } catch (error) {
       if (error instanceof NotFoundException) throw error;
       if (error instanceof Prisma.PrismaClientKnownRequestError) {

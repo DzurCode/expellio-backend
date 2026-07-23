@@ -1,12 +1,41 @@
 import { Injectable, NotFoundException, InternalServerErrorException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
-import { Prisma } from '@prisma/client';
+import { Prisma, AuditAction } from '@prisma/client';
+
+export interface CreateAuditLogDto {
+  userId: string;
+  action: AuditAction;
+  entityType: string;
+  entityId: string;
+  changes?: Record<string, any>;
+  householdId?: string;
+  ipAddress?: string;
+  userAgent?: string;
+}
 
 @Injectable()
 export class AuditLogService {
   constructor(private prisma: PrismaService) {}
 
 
+  async create(dto: CreateAuditLogDto) {
+    try {
+      return await this.prisma.auditLog.create({
+        data: {
+          userId: dto.userId,
+          action: dto.action,
+          entityType: dto.entityType,
+          entityId: dto.entityId,
+          changes: dto.changes ?? {},
+          householdId: dto.householdId,
+          ipAddress: dto.ipAddress,
+          userAgent: dto.userAgent,
+        },
+      });
+    } catch (error) {
+      throw new InternalServerErrorException('Database error');
+    }
+  }
 
   async findAllByHousehold(householdId: string) {
     try {
