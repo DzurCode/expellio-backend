@@ -8,6 +8,7 @@ describe('UsersController', () => {
 
   const mockUsersService = {
     create: jest.fn(),
+    register: jest.fn(),
     findAll: jest.fn(),
     findOne: jest.fn(),
     update: jest.fn(),
@@ -39,11 +40,18 @@ describe('UsersController', () => {
   });
 
   describe('create', () => {
-    it('should call service.create', async () => {
-      const dto = { email: 'test@test.com', passwordHash: 'hash', displayName: 'Test', locale: 'en', timezone: 'UTC' };
-      mockUsersService.create.mockResolvedValue('created');
+    it('should call service.register', async () => {
+      const dto = {
+        email: 'test@test.com',
+        passwordHash: 'hash',
+        displayName: 'Test',
+        locale: 'en',
+        timezone: 'UTC',
+        inviteCode: 'MIAPP-BETA-2026',
+      };
+      mockUsersService.register.mockResolvedValue('created');
       const result = await controller.create(dto);
-      expect(service.create).toHaveBeenCalledWith(dto);
+      expect(service.register).toHaveBeenCalledWith(dto);
       expect(result).toBe('created');
     });
   });

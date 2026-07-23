@@ -1,5 +1,12 @@
-import { Injectable, NotFoundException, ConflictException, InternalServerErrorException } from '@nestjs/common';
+import {
+  Injectable,
+  NotFoundException,
+  ConflictException,
+  InternalServerErrorException,
+  BadRequestException,
+} from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { ConfigService } from '@nestjs/config';
 import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
 import { Prisma } from '@prisma/client';
@@ -7,23 +14,49 @@ import * as bcrypt from 'bcrypt';
 
 @Injectable()
 export class UsersService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private readonly configService: ConfigService,
+  ) {}
+
+  async register(createUserDto: CreateUserDto) {
+    const inviteCode = this.configService.getOrThrow<string>('app.inviteCode');
+    if (!createUserDto.inviteCode || createUserDto.inviteCode !== inviteCode) {
+      throw new BadRequestException('Invalid invitation code');
+    }
+    return this.create(createUserDto);
+  }
 
   async create(createUserDto: CreateUserDto) {
     try {
       const rounds = 10;
-      const hashedPassword = await bcrypt.hash(createUserDto.passwordHash, rounds);
+      const hashedPassword = await bcrypt.hash(
+        createUserDto.passwordHash,
+        rounds,
+      );
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+      const { inviteCode, ...rest } = createUserDto;
       const userData = {
-        ...createUserDto,
+        ...rest,
         passwordHash: hashedPassword,
       };
       return await this.prisma.user.create({
         data: userData,
-        select: { id: true, email: true, displayName: true, avatarUrl: true, locale: true, timezone: true, createdAt: true, deletionScheduledAt: true },
+        select: {
+          id: true,
+          email: true,
+          displayName: true,
+          avatarUrl: true,
+          locale: true,
+          timezone: true,
+          createdAt: true,
+          deletionScheduledAt: true,
+        },
       });
     } catch (error) {
       if (error instanceof Prisma.PrismaClientKnownRequestError) {
-        if (error.code === 'P2002') throw new ConflictException('Email already in use');
+        if (error.code === 'P2002')
+          throw new ConflictException('Email already in use');
       }
       throw new InternalServerErrorException('Database error');
     }
@@ -33,7 +66,16 @@ export class UsersService {
     try {
       return await this.prisma.user.findMany({
         where: { deletedAt: null },
-        select: { id: true, email: true, displayName: true, avatarUrl: true, locale: true, timezone: true, createdAt: true, deletionScheduledAt: true },
+        select: {
+          id: true,
+          email: true,
+          displayName: true,
+          avatarUrl: true,
+          locale: true,
+          timezone: true,
+          createdAt: true,
+          deletionScheduledAt: true,
+        },
       });
     } catch (error) {
       throw new InternalServerErrorException('Database error');
@@ -44,7 +86,16 @@ export class UsersService {
     try {
       const user = await this.prisma.user.findFirst({
         where: { id, deletedAt: null },
-        select: { id: true, email: true, displayName: true, avatarUrl: true, locale: true, timezone: true, createdAt: true, deletionScheduledAt: true },
+        select: {
+          id: true,
+          email: true,
+          displayName: true,
+          avatarUrl: true,
+          locale: true,
+          timezone: true,
+          createdAt: true,
+          deletionScheduledAt: true,
+        },
       });
       if (!user) {
         throw new NotFoundException(`User with ID ${id} not found`);
@@ -62,13 +113,25 @@ export class UsersService {
       return await this.prisma.user.update({
         where: { id },
         data: updateUserDto,
-        select: { id: true, email: true, displayName: true, avatarUrl: true, locale: true, timezone: true, createdAt: true, updatedAt: true, deletionScheduledAt: true },
+        select: {
+          id: true,
+          email: true,
+          displayName: true,
+          avatarUrl: true,
+          locale: true,
+          timezone: true,
+          createdAt: true,
+          updatedAt: true,
+          deletionScheduledAt: true,
+        },
       });
     } catch (error) {
       if (error instanceof NotFoundException) throw error;
       if (error instanceof Prisma.PrismaClientKnownRequestError) {
-        if (error.code === 'P2002') throw new ConflictException('Email already in use');
-        if (error.code === 'P2025') throw new NotFoundException(`User with ID ${id} not found`);
+        if (error.code === 'P2002')
+          throw new ConflictException('Email already in use');
+        if (error.code === 'P2025')
+          throw new NotFoundException(`User with ID ${id} not found`);
       }
       throw new InternalServerErrorException('Database error');
     }
@@ -77,7 +140,7 @@ export class UsersService {
   async scheduleDeletion(id: string) {
     try {
       await this.findOne(id);
-      
+
       // As per policy, scheduled for 30 days
       const deletionDate = new Date();
       deletionDate.setDate(deletionDate.getDate() + 30);
@@ -85,11 +148,25 @@ export class UsersService {
       return await this.prisma.user.update({
         where: { id },
         data: { deletionScheduledAt: deletionDate },
-        select: { id: true, email: true, displayName: true, avatarUrl: true, locale: true, timezone: true, createdAt: true, updatedAt: true, deletionScheduledAt: true },
+        select: {
+          id: true,
+          email: true,
+          displayName: true,
+          avatarUrl: true,
+          locale: true,
+          timezone: true,
+          createdAt: true,
+          updatedAt: true,
+          deletionScheduledAt: true,
+        },
       });
     } catch (error) {
       if (error instanceof NotFoundException) throw error;
-      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2025') throw new NotFoundException(`User with ID ${id} not found`);
+      if (
+        error instanceof Prisma.PrismaClientKnownRequestError &&
+        error.code === 'P2025'
+      )
+        throw new NotFoundException(`User with ID ${id} not found`);
       throw new InternalServerErrorException('Database error');
     }
   }
@@ -100,11 +177,25 @@ export class UsersService {
       return await this.prisma.user.update({
         where: { id },
         data: { deletionScheduledAt: null },
-        select: { id: true, email: true, displayName: true, avatarUrl: true, locale: true, timezone: true, createdAt: true, updatedAt: true, deletionScheduledAt: true },
+        select: {
+          id: true,
+          email: true,
+          displayName: true,
+          avatarUrl: true,
+          locale: true,
+          timezone: true,
+          createdAt: true,
+          updatedAt: true,
+          deletionScheduledAt: true,
+        },
       });
     } catch (error) {
       if (error instanceof NotFoundException) throw error;
-      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2025') throw new NotFoundException(`User with ID ${id} not found`);
+      if (
+        error instanceof Prisma.PrismaClientKnownRequestError &&
+        error.code === 'P2025'
+      )
+        throw new NotFoundException(`User with ID ${id} not found`);
       throw new InternalServerErrorException('Database error');
     }
   }
