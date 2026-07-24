@@ -92,5 +92,14 @@
   },
   "prisma": {
     "seed": "ts-node prisma/seed.ts"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "@prisma/engines",
+      "@scarf/scarf",
+      "bcrypt",
+      "prisma",
+      "unrs-resolver"
+    ]
   }
 }
