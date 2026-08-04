@@ -12,7 +12,6 @@ async function bootstrap() {
   app.enableCors({
     origin: [
       process.env.FRONTEND_URL || 'http://localhost:5173',
-      // We can add the mobile app origin here later when known
     ],
     credentials: true,
   });
@@ -33,6 +32,7 @@ async function bootstrap() {
   const document = SwaggerModule.createDocument(app, config);
   SwaggerModule.setup('api', app, document);
 
-  await app.listen(process.env.PORT ?? 3000);
+  // Escuchar en 0.0.0.0 es crítico para contenedores Docker/Railway
+  await app.listen(process.env.PORT ?? 3000, '0.0.0.0');
 }
 bootstrap();
