@@ -3,6 +3,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { CreateTransactionDto } from './dto/create-transaction.dto';
 import { UpdateTransactionDto } from './dto/update-transaction.dto';
 import { Prisma } from '@prisma/client';
+import { TransactionFilterDto } from './dto/transaction-filter.dto';
 
 @Injectable()
 export class TransactionsService {
@@ -44,14 +45,42 @@ export class TransactionsService {
     }
   }
 
-  async findAll(householdId: string) {
+  async findAll(householdId: string, filterDto?: TransactionFilterDto) {
     try {
+      const now = new Date();
+      
+      let startDate: Date;
+      let endDate: Date;
+
+      if (filterDto?.startDate && filterDto?.endDate) {
+        startDate = new Date(filterDto.startDate);
+        endDate = new Date(filterDto.endDate);
+        
+        // Enforce max 1 year range
+        const oneYearInMs = 365 * 24 * 60 * 60 * 1000;
+        if (endDate.getTime() - startDate.getTime() > oneYearInMs) {
+          throw new ConflictException('Date range cannot exceed 1 year');
+        }
+      } else {
+        // Default: First day of the current month to current day
+        startDate = new Date(now.getFullYear(), now.getMonth(), 1);
+        endDate = now;
+      }
+
       return await this.prisma.transaction.findMany({
-        where: { householdId, deletedAt: null },
+        where: { 
+          householdId, 
+          deletedAt: null,
+          transactionDate: {
+            gte: startDate,
+            lte: endDate,
+          }
+        },
         include: { splits: true, category: true },
         orderBy: { transactionDate: 'desc' },
       });
     } catch (error) {
+      if (error instanceof ConflictException) throw error;
       throw new InternalServerErrorException('Database error');
     }
   }
@@ -134,39 +163,61 @@ export class TransactionsService {
     }
   }
 
-  async getSummary(householdId: string, userId: string) {
+  async getSummary(householdId: string, userId: string, filterDto?: TransactionFilterDto) {
     try {
       const now = new Date();
       const currentYear = now.getFullYear();
-      const currentMonth = now.getMonth(); // 0-indexed
+      const currentMonth = now.getMonth();
 
-      // Start of 6 months ago (first day of that month)
-      const startOfSixMonthsAgo = new Date(currentYear, currentMonth - 5, 1);
+      let startDate: Date;
+      let endDate: Date;
 
-      // Fetch all transactions from 6 months ago to now
+      if (filterDto?.startDate && filterDto?.endDate) {
+        startDate = new Date(filterDto.startDate);
+        endDate = new Date(filterDto.endDate);
+        
+        // Enforce max 1 year range
+        const oneYearInMs = 365 * 24 * 60 * 60 * 1000;
+        if (endDate.getTime() - startDate.getTime() > oneYearInMs) {
+          throw new ConflictException('Date range cannot exceed 1 year');
+        }
+      } else {
+        // Default: First day of the current year to current day
+        startDate = new Date(currentYear, 0, 1);
+        endDate = now;
+      }
+
       const transactions = await this.prisma.transaction.findMany({
         where: {
           householdId,
           deletedAt: null,
           transactionDate: {
-            gte: startOfSixMonthsAgo,
+            gte: startDate,
+            lte: endDate,
           },
         },
       });
 
-      // Calculate current month's totals
       let income = 0;
       let expenses = 0;
 
-      // Group totals by month for the last 6 months
       const monthNames = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'];
       const monthlyDataMap = new Map<string, { income: number; expenses: number }>();
 
-      // Initialize the last 6 months in order
-      for (let i = 5; i >= 0; i--) {
-        const d = new Date(currentYear, currentMonth - i, 1);
+      // Generate dynamic months from startDate to endDate
+      const startYear = startDate.getFullYear();
+      const startMonth = startDate.getMonth();
+      const endYear = endDate.getFullYear();
+      const endMonth = endDate.getMonth();
+      
+      const totalMonths = (endYear - startYear) * 12 + (endMonth - startMonth) + 1;
+      
+      for (let i = 0; i < totalMonths; i++) {
+        const d = new Date(startYear, startMonth + i, 1);
         const label = monthNames[d.getMonth()];
-        monthlyDataMap.set(label, { income: 0, expenses: 0 });
+        // If there are duplicate labels (e.g., > 12 months), append year to make it unique
+        const finalLabel = totalMonths > 12 || startYear !== endYear ? `${label} ${d.getFullYear().toString().slice(-2)}` : label;
+        monthlyDataMap.set(finalLabel, { income: 0, expenses: 0 });
       }
 
       for (const tx of transactions) {
@@ -175,18 +226,16 @@ export class TransactionsService {
         const txYear = txDate.getFullYear();
         const amount = Number(tx.amount);
 
-        // Check if current month
-        if (txYear === currentYear && txMonth === currentMonth) {
-          if (tx.type === 'income') {
-            income += amount;
-          } else if (tx.type === 'expense') {
-            expenses += amount;
-          }
+        if (tx.type === 'income') {
+          income += amount;
+        } else if (tx.type === 'expense') {
+          expenses += amount;
         }
 
-        // Add to historical month slot if present
-        const label = monthNames[txMonth];
-        const slot = monthlyDataMap.get(label);
+        const baseLabel = monthNames[txMonth];
+        const finalLabel = totalMonths > 12 || startYear !== endYear ? `${baseLabel} ${txYear.toString().slice(-2)}` : baseLabel;
+        
+        const slot = monthlyDataMap.get(finalLabel);
         if (slot) {
           if (tx.type === 'income') {
             slot.income += amount;

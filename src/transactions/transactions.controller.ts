@@ -1,7 +1,8 @@
-import { Controller, Get, Post, Body, Patch, Param, Delete, HttpCode } from '@nestjs/common';
+import { Controller, Get, Post, Body, Patch, Param, Delete, HttpCode, Query } from '@nestjs/common';
 import { TransactionsService } from './transactions.service';
 import { CreateTransactionDto } from './dto/create-transaction.dto';
 import { UpdateTransactionDto } from './dto/update-transaction.dto';
+import { TransactionFilterDto } from './dto/transaction-filter.dto';
 import { ApiTags, ApiOperation } from '@nestjs/swagger';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 
@@ -23,8 +24,11 @@ export class TransactionsController {
 
   @Get()
   @ApiOperation({ summary: 'List transactions' })
-  findAll(@Param('householdId') householdId: string) {
-    return this.transactionsService.findAll(householdId);
+  findAll(
+    @Param('householdId') householdId: string,
+    @Query() filterDto: TransactionFilterDto,
+  ) {
+    return this.transactionsService.findAll(householdId, filterDto);
   }
 
   @Get('summary')
@@ -32,8 +36,9 @@ export class TransactionsController {
   getSummary(
     @Param('householdId') householdId: string,
     @CurrentUser() user: { id: string },
+    @Query() filterDto: TransactionFilterDto,
   ) {
-    return this.transactionsService.getSummary(householdId, user.id);
+    return this.transactionsService.getSummary(householdId, user.id, filterDto);
   }
 
   @Get(':id')
